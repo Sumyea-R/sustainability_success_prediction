@@ -169,3 +169,22 @@ Use SHAP to:
   * Regional differences  
 * Support your **contribution claims**
 
+### **Final Outputs:**
+
+**Save 3 artifacts:**
+
+* **`data_clean/dealroom_clean_features.csv` (X only)**
+
+* **`data_clean/dealroom_clean_labels.csv` (ID \+ Name \+ y)**
+
+* **`data_clean/dealroom_train_test_split.pkl`**
+
+**Note: Keep raw unprocessed data at `data_raw/dealroom_companies_SDG.csv`**
+
+**Also save:**
+
+* **`reports/data_dictionary.csv` (feature name → definition → data type → missing value handling strategy)**
+
+* **`reports/cleaning_log.md` (what was done at each step for cleaning the dataset)**  
+* **`reports/columns_dropped.csv` (column name → why it was dropped)**
+
