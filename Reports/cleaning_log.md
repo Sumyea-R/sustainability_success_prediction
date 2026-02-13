@@ -1,85 +1,5 @@
 use USD as currency!
 
-### Deleted Rows in clean_features
-URL
-Website
-Tagline
-Long description
-Address
-Street
-Street Number
-Street and street number
-zipcode
-HQ State
-HQ City
-Latitude
-Longitude
-World Locations
-Custom HQ regions
-Total funding (EUR M)
-Closing year -> no data
-Closing month -> no data
-Closing date -> no data
-KPI Currency
-Valuation
-Valuation Currency
-Valuation (EUR)
-Historical Valuations - values (EUR M)
-AngelList
-Facebook
-Twitter
-LinkedIn
-Crunchbase
-Google Play Link
-iTunes
-Each round Currency
-Logo
-Founders LinkedIn
-App downliads ....
-Website traffic rank
-Employee rank
-Number of alumni founders that raised > 10M
-TechStack
-Trade Register number, name, url
-PIC Number
-Dealroom Signal (all columns)
-innovation corporate rank
-Founding location (not enough data)
-Team Dealroom (not enough data)
-Lead Investors (not enough data)
-Seed year (not enough data)
-launch month (not enough data)
-founders strength (not enough data)
-Technologies (not enough data)
-year company became unicorn (not enough data)
-year company became future unicorn (not enough data)
-Website traffic estimate (not relevant)
-employees in hq country (not relevant)
-revenue EUR (we use usd)
-R&D margin (not enough data)
-EV/Revenue (not enough data)
-EV/EBITDA (not enough data)
-website traffic estimate 6 months (not relevant)
-public lists (text)
-all tags (text)
-founders statuses (after y)
-Founders company experience
-founders first degree
-founders first degree year
-is top past founder (not enough data)
-Team (editorial)
-each investor type (not relevant)
-Income streams (not relevant)
-number of patens (too many 0 values)
-launch date (year is sufficient)
-Tags (too much)
-Employee growth (only last 3,6,12 months)
-
-
-
-
-
-
 
 Original Target Variable:
 (IPO) or (M&A) or ((survived 5+ years) and (20% or more revenue growth over 3 years)).
@@ -113,7 +33,7 @@ Then, I tried...
 (IPO) or (M&A) or ((survived 5+ years) and (>20% employee CAGR over year 2 to year 5 after founding)) or (Scale-up (>50 employees as most recent value) as a proxy for long-term survival)
 ... and found a discrepancy in very high scale-ups (~1400) and only few CAGR (~200). I considered the low data density in Employees (2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026) column to be the cause.
 
-So I tried the following: I calculated the dynamic CAGR over all years between the first and the last value I can find. The threshold is still 20% CAGR and >10 employees at the start. This is much more reliable, finds startups that cannot reach the >50 employee threshold but are still significantly growing. This gave me the following distribution of successful startups:
+So I tried the following: I calculated the dynamic CAGR over all years between the first and the last value I could find. The threshold is still 20% CAGR and >10 employees at the start. This is much more reliable, finds startups that cannot reach the >50 employee threshold but are still significantly growing. This gave me the following distribution of successful startups:
 
 Breakdown:
 High Growth (dynamic CAGR):    1040
@@ -128,3 +48,57 @@ IS_SUCCESS
 The metrics have a 72,25% overlap (convergent validity)
 
 
+
+After having a first understanding of success distribution, I pursued with feature selection. I evlauated which columns needed to be removed as they are post target variable values and which are not necessary for further feature engineering.
+
+I kept ID and Name as index
+I counted number of entries in Num_Investors, Num_Founders, Num_SDGs
+I mapped Is_Serial_Founder and Is_Top_Uni_Founder to binary, 1 if at least 1x yes, else 0 => rename to Has_...
+I calculated gender category (unknown, male only, diverse with at least 1 female), company age with 2026 as current year, capital intensity and average round size
+I encoded multi-label columns using MultiLabelBinarizer: Industries and Sub industries, client model (b2b, b2c), SDGs, SDG core or side value, HQ Region, Top 20 countries 
+I created a feature indicating if funding is undisclosed (investor but no funding) as this might be a different signal than truly having 0 funding with no investors
+I created a feature "Months_Since_Last_Funding" adn "IS_Funding_Overdue" (>24 months)
+Put everything together in dealroom_clean_features_final.csv
+
+Startups without Top-20 Industry: 4.0%
+Startups without Top-60 Sub-Industry: 27.1%
+Distribution of gender category:
+Gender_Category
+-1    0.466214
+ 0    0.385383
+ 1    0.148403
+Name: proportion, dtype: float64
+IS_SUCCESS
+0    0.817252
+1    0.182748
+Name: proportion, dtype: float64
+--- Country Coverage Check ---
+Top 15 countries cover: 79.3%
+Startups in 'long tail': 20.7%
+------------------------------
+ANALYSIS: Recency & Overdue Features
+------------------------------
+Stats for months without fallback strategy:
+count    12520.000000
+mean        52.496885
+std         33.382973
+min          0.000000
+25%         25.000000
+50%         47.000000
+75%         77.000000
+max        256.000000
+Name: Months_Since_Last_Funding, dtype: float64
+
+Number of 'unknown/fallback' (Wert 999): 0 (0.0%)
+\Distribution 'Is_Funding_Overdue' (> 24 months):
+Is_Funding_Overdue
+1    0.751677
+0    0.248323
+Name: proportion, dtype: float64
+
+Crosstab: Overdue vs. Success:
+IS_SUCCESS                 0         1
+Is_Funding_Overdue                    
+0                   0.604696  0.395304
+1                   0.887472  0.112528
+------------------------------

@@ -5,7 +5,10 @@ import pandas as pd
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 data_clean_folder = os.path.abspath(os.path.join(current_dir, "..", "Data_Clean"))
 input_file = os.path.join(data_clean_folder, "dealroom_clean_features_2.csv")
-output_file = os.path.join(data_clean_folder, "dataset_ready_for_ml.csv")
+output_file_labels = os.path.join(data_clean_folder, "dealroom_clean_labels.csv")
+output_file_features = os.path.join(data_clean_folder, "dealroom_clean_features_3_labels.csv")
+
+
 
 print(f"Loading data from: {input_file}")
 df = pd.read_csv(input_file, sep=';')
@@ -254,9 +257,9 @@ df_clean['IS_SUCCESS'] = (
     ((df_clean['IS_ACTIVE'] == True) & (df_clean['IS_SCALE_UP'] == 1))
 ).astype(int)
 
-# Check & cleanup
+# Check 
 print("Breakdown:")
-print(f"High Growth (dynamic CAGR):    {df_clean['IS_HIGH_GROWTH'].sum()}")
+print(f"High Growth (CAGR):    {df_clean['IS_HIGH_GROWTH'].sum()}")
 print(f"Successful Exits:      {df_clean['IS_EXIT'].sum()}")
 print(f"Scale-ups (>50 Emp):   {df_clean['IS_SCALE_UP'].sum()}")
 print(f"TOTAL SUCCESSES (1):   {df_clean['IS_SUCCESS'].sum()}")
@@ -265,3 +268,15 @@ print("Class Distribution:")
 print(df_clean["IS_SUCCESS"].value_counts(normalize=True))
 
 
+
+# Export ID + Name + y
+columns_to_export = ["ID", "Name", "IS_SUCCESS"]
+try:
+    df_clean.to_csv(output_file_labels, index=False, columns=columns_to_export, sep=';')
+    print(f"Successfully exported cleaned data to: {output_file_labels}")
+except Exception as e:
+    print(f"Error exporting cleaned data: {e}")
+
+
+# Export full dataset with features and labels 
+df_clean.to_csv(output_file_features, index=False, sep=';')
