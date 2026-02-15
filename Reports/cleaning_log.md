@@ -1,21 +1,16 @@
-use USD as currency!
-
-
+### Labelling
 Original Target Variable:
 (IPO) or (M&A) or ((survived 5+ years) and (20% or more revenue growth over 3 years)).
 
-Change to Target Variable:
-Financial data such as profit is highly distorted due to Corona pandemic that lead to negative margins. Hence, I prefer employee number over revenue: the values are not as volatile and profitable startups could still see growth during the pandemic.
+Changed to Target Variable:
+Financial data such as profit is highly distorted due to Corona pandemic that lead to negative margins. Hence, I chose employee number over revenue: the values are not as volatile and profitable startups could still see growth during the pandemic.
 =>
 (IPO) or (M&A) or ((survived 5+ years) and (>20% employee CAGR over year 2 to year 5 after founding)).
 
 for X:
 remove all entries where Launch year < 2016
 remove all entries where Launch year > 2021 (survival of 5+ years)
-
-for y:
-employee growth calculation
-IPO/ACQUISITION in Last round column
+as employee data starts 2016 and startup needs to survive at least 5 years (2026-2021=5)
 
 
 ACQUISITION: identified problematic case in data
@@ -27,7 +22,7 @@ Tried...
 IS_SUCCESS
 0    0.94984
 1    0.05016
-... distribution with too little success rate. I also tried to lower the CAGR rules but without better results.
+... distribution with little success rate. I also tried to lower the CAGR rules but without better results.
 
 Then, I tried...
 (IPO) or (M&A) or ((survived 5+ years) and (>20% employee CAGR over year 2 to year 5 after founding)) or (Scale-up (>50 employees as most recent value) as a proxy for long-term survival)
@@ -47,10 +42,14 @@ IS_SUCCESS
 1    0.182748
 
 
+### Cleaning and features
 
 After having a first understanding of success distribution, I pursued with feature selection. I evlauated which columns needed to be removed as they are post target variable values and which are not necessary for further feature engineering.
 First, I removed duplicate data, focussing on keeping the newest data for a startup (sorted by last funding date and total funding descending under duplicate values) while I identified a startup as unique when it had the same name + founding year + HQ country
+
 I kept ID and Name as index
+For every startup that contains 0 founders, I clipped it to 1 as lower bound as every startup needs to have at least 1 founder
+
 I counted number of entries in Num_Investors, Num_Founders, Num_SDGs
 I mapped Is_Serial_Founder and Is_Top_Uni_Founder to binary, 1 if at least 1x yes, else 0 => rename to Has_...
 I calculated gender category (unknown, male only, diverse with at least 1 female), company age with 2026 as current year, capital intensity and average round size
@@ -58,7 +57,9 @@ I encoded multi-label columns using MultiLabelBinarizer: Industries and Sub indu
 I created a feature indicating if funding is undisclosed (investor but no funding) as this might be a different signal than truly having 0 funding with no investors
 I created a feature "Months_Since_Last_Funding" adn "IS_Funding_Overdue" (>24 months)
 
-Put everything together in dealroom_clean_features_final.csv
+Then I log transformed Total_Rounds, Avg_Round_Size and Capital_Intensity 
+
+#### Put everything together in dealroom_clean_features_final.csv
 Console log with a few stats:
 
 
