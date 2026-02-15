@@ -60,10 +60,15 @@ I created a feature "Months_Since_Last_Funding" adn "IS_Funding_Overdue" (>24 mo
 
 Put everything together in dealroom_clean_features_final.csv
 Console log with a few stats:
+
+
+
 Entries before removing duplicates: 12520
 Entries after removing duplicates: 12498
+
 Startups without Top-20 Industry: 4.0%
 Startups without Top-60 Sub-Industry: 27.1%
+
 Distribution of gender category:
 Gender_Category
 -1    0.465755
@@ -100,8 +105,23 @@ Name: proportion, dtype: float64
 
 Crosstab: Overdue vs. Success:
 IS_SUCCESS                 0         1
-Is_Funding_Overdue 
-                  
+Is_Funding_Overdue                    
 0                   0.604569  0.395431
 1                   0.887327  0.112673
 ------------------------------
+       Log_Funding_Total_USD  Log_Capital_Intensity  Log_Avg_Round_Size
+count               12498.00               12498.00             8855.00
+mean                    0.98                   0.66                0.84
+std                     1.42                   1.05                1.05
+min                     0.00                   0.00                0.00
+25%                     0.00                   0.00                0.03
+50%                     0.11                   0.08                0.42
+75%                     1.64                   0.97                1.32
+max                     8.95                   7.84                7.84
+
+----------------------------------------
+Funding_Total_USD    0
+Capital_Intensity    0
+Avg_Round_Size       0
+dtype: int64
+No infinite values detected. Log transformation seems safe.

@@ -53,7 +53,6 @@ print(f"Entries after removing duplicates: {len(df)}")
 
 
 
-
 def count_list_items(val):
     if pd.isna(val) or str(val).strip() == '': return 0
     return len(str(val).split(';'))
@@ -225,6 +224,9 @@ df['Num_Investors'] = df['Investors names'].apply(count_list_items)
 df['Num_Founders'] = df['Founders'].apply(count_list_items)
 df['Num_SDGs'] = df['SDGs'].apply(count_list_items)
 
+# Clip number of investors to a min of 1 
+df['Num_Founders'] = df['Num_Founders'].clip(lower=1)
+
 # Binary mapping for yes/no columns
 df['Has_Serial_Founder'] = df['Is serial founder (yes/no)'].apply(binary_map)
 df['Has_Top_Uni_Founder'] = df['Founder is from top university (yes/no)'].apply(binary_map)
@@ -308,16 +310,21 @@ df['Months_Since_Last_Funding'] = df.apply(
 df['Is_Funding_Overdue'] = (df['Months_Since_Last_Funding'] > 24).astype(int)
 new_recency_features = ['Months_Since_Last_Funding', 'Is_Funding_Overdue']
 
+# Log transformation of (extreme) numeric values
+cols_to_log = ['Funding_Total_USD', 'Capital_Intensity', 'Avg_Round_Size']
+for col in cols_to_log:
+    df[f'Log_{col}'] = np.log1p(df[col])
+
 
 
 # Final feature set - we keep all numeric features and add the encoded categorical features
 
 keep_numeric = [
-    'Funding_Total_USD',
+    'Log_Funding_Total_USD',
     'Funding_Is_Undisclosed',
     'Total_Rounds', 
-    'Avg_Round_Size',
-    'Capital_Intensity',
+    'Log_Avg_Round_Size',
+    'Log_Capital_Intensity',
     'Company_Age',
     'Num_Investors',
     'Num_Founders',
@@ -402,3 +409,25 @@ print(df['Is_Funding_Overdue'].value_counts(normalize=True))
 print("\nCrosstab: Overdue vs. Success:")
 print(pd.crosstab(df['Is_Funding_Overdue'], df['IS_SUCCESS'], normalize='index'))
 print("-" * 30)
+
+# Check log transformations 
+log_cols = [f'Log_{c}' for c in cols_to_log]
+print(df[log_cols].describe().round(2))
+
+print("\n" + "-"*40)
+inf_count = np.isinf(df[cols_to_log]).sum()
+print(inf_count)
+
+if inf_count.sum() > 0:
+    print("Infinite values detected! This could cause issues with XGBoost. Please investigate the columns above for potential data issues.")
+else:
+    print("No infinite values detected. Log transformation seems safe.")
+
+print("-" * 40)
+
+
+num_neg = (df['IS_SUCCESS'] == 0).sum()
+num_pos = (df['IS_SUCCESS'] == 1).sum()
+scale_pos_weight = num_neg / num_pos
+
+print(f"Distribution of success 0/1: {scale_pos_weight:.2f}")
