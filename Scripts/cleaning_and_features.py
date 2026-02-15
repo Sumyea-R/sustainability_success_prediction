@@ -14,8 +14,44 @@ output_file = os.path.join(data_clean_folder, "dealroom_clean_features_final.csv
 print(f"Loading data from: {input_file}")
 df = pd.read_csv(input_file, sep=';')
 
-# Set ID and Name as index
-df.set_index(['ID', 'Name'], inplace=True)
+# Make sure ID is a column and not just an index, as we need it for deduplication logic  
+if 'ID' not in df.columns and df.index.name == 'ID':
+    df.reset_index(inplace=True)
+elif 'ID' not in df.columns and 'ID' in df.index.names:
+    df.reset_index(inplace=True)
+
+print(f"Entries before removing duplicates: {len(df)}")
+
+# Replace slashes with dashes in date columns to help with sorting, and create temporary columns for deduplication logic
+df['Tmp_Date_Str'] = df['Last funding date'].astype(str).str.replace('/', '-', regex=False)
+df['Tmp_Date'] = pd.to_datetime(df['Tmp_Date_Str'], errors='coerce')
+
+# Convert funding to numeric
+df['Tmp_Funding'] = pd.to_numeric(df['Total funding (USD M)'], errors='coerce').fillna(0)
+
+# Sort by date and funding to keep the most recent and highest funded entry when dropping duplicates
+df.sort_values(by=['Tmp_Date', 'Tmp_Funding'], ascending=[False, False], inplace=True)
+
+# ID must be unique 
+if 'ID' in df.columns:
+    df.drop_duplicates(subset=['ID'], keep='first', inplace=True)
+
+# Name, Launch year and country combination must be unique to identify a startup as unique
+if {'Name', 'Launch year'}.issubset(df.columns):
+    df.drop_duplicates(subset=['Name', 'Launch year', 'HQ country'], keep='first', inplace=True)
+
+
+# Drop temporary columns used for deduplication
+df.drop(columns=['Tmp_Date', 'Tmp_Date_Str', 'Tmp_Funding'], inplace=True)
+
+# Set index back to ID and Name
+cols_to_index = [c for c in ['ID', 'Name'] if c in df.columns]
+if cols_to_index:
+    df.set_index(cols_to_index, inplace=True)
+
+print(f"Entries after removing duplicates: {len(df)}")
+
+
 
 
 def count_list_items(val):
@@ -253,9 +289,9 @@ df_sdg_type = pd.get_dummies(df['SDG core or side value'], prefix='SDG_Type', dt
 # HQ region one-hot encoding
 df_region = pd.get_dummies(df['HQ region'], prefix='Region', dtype=int)
 
-# OHE top 15 countries, rest as "Other" 
-top_15_countries = df['HQ country'].value_counts().nlargest(15).index
-df['Country_Top'] = df['HQ country'].apply(lambda x: x if x in top_15_countries else 'Other')
+# OHE top 40 countries, rest as "Other" 
+top_countries = df['HQ country'].value_counts().nlargest(40).index
+df['Country_Top'] = df['HQ country'].apply(lambda x: x if x in top_countries else 'Other')
 df_country = pd.get_dummies(df['Country_Top'], prefix='Country', dtype=int)
 
 
@@ -317,7 +353,6 @@ X_final = pd.concat([
 
 X_final = X_final.fillna(0)
 
-
 # Save final dataset
 X_final.to_csv(output_file, sep=';')
 print(f"Done, saved as {output_file}")
@@ -335,13 +370,13 @@ print(df['Gender_Category'].value_counts(normalize=True))
 print(df["IS_SUCCESS"].value_counts(normalize=True))
 
 
-# Coverage Check: How many startups are covered by the top 15 countries vs. how many fall into the "long tail" of less common countries?
-startups_in_top_countries = df['HQ country'].isin(top_15_countries).sum()
+# Coverage Check: How many startups are covered by the top countries vs. how many fall into the "long tail" of less common countries?
+startups_in_top_countries = df['HQ country'].isin(top_countries).sum()
 coverage_pct = startups_in_top_countries / len(df)
 lost_pct = 1 - coverage_pct
 
 print(f"--- Country Coverage Check ---")
-print(f"Top 15 countries cover: {coverage_pct:.1%}")
+print(f"Top countries cover: {coverage_pct:.1%}")
 print(f"Startups in 'long tail': {lost_pct:.1%}")
 
 
@@ -357,13 +392,13 @@ print(real_months.describe())
 
 # How many have the "unknown/fallback" value of 999, and what percentage is that?
 unknown_count = (df['Months_Since_Last_Funding'] >= 900).sum()
-print(f"\nNumber of 'unknown/fallback' (Wert 999): {unknown_count} ({unknown_count/len(df):.1%})")
+print(f"\nNumber of 'unknown/fallback' (999): {unknown_count} ({unknown_count/len(df):.1%})")
 
-# OVerdue distribution
+# Overdue distribution
 print("\Distribution 'Is_Funding_Overdue' (> 24 months):")
 print(df['Is_Funding_Overdue'].value_counts(normalize=True))
 
-# 4. Cross-Check: Overdue vs. Success
+# Cross-Check: Overdue vs. Success
 print("\nCrosstab: Overdue vs. Success:")
 print(pd.crosstab(df['Is_Funding_Overdue'], df['IS_SUCCESS'], normalize='index'))
 print("-" * 30)
