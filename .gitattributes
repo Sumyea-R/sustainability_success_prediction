@@ -1,1 +1,2 @@
 /Data/Dealroom_Companies_SDG.csv filter=lfs diff=lfs merge=lfs -text
+/Data_Raw/Dealroom_Companies_SDG.csv filter=lfs diff=lfs merge=lfs -text
