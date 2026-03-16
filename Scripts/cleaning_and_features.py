@@ -429,3 +429,93 @@ num_pos = (df['IS_SUCCESS'] == 1).sum()
 scale_pos_weight = num_neg / num_pos
 
 print(f"Distribution of success 0/1: {scale_pos_weight:.2f}")
+
+
+
+print("\nGenerating Visual EDA Dashboard...")
+sns.set_theme(style="whitegrid")
+
+# Figure 1: Coverage & Missingness
+fig1, axes1 = plt.subplots(1, 2, figsize=(12, 5))
+
+# Country Coverage
+coverage_pct = df['HQ country'].isin(top_countries).sum() / len(df)
+lost_pct = 1 - coverage_pct
+axes1[0].pie([coverage_pct, lost_pct], labels=['Top 40 Countries', 'Long Tail'], 
+             autopct='%1.1f%%', startangle=90, colors=['#4C72B0', '#C44E52'], wedgeprops={'width': 0.4})
+axes1[0].set_title('Country Coverage Check')
+
+# Industry Missingness
+lost_ind = (df_ind.sum(axis=1) == 0).mean()
+lost_sub = (df_sub.sum(axis=1) == 0).mean()
+axes1[1].bar(['Top-20 Ind.\nMissing', 'Top-60 Sub-Ind.\nMissing'], [lost_ind, lost_sub], color=['#55A868', '#F1A340'])
+axes1[1].set_ylim(0, 1)
+axes1[1].set_ylabel('Proportion')
+axes1[1].set_title('Missing Information from Encoding')
+for i, v in enumerate([lost_ind, lost_sub]):
+    axes1[1].text(i, v + 0.02, f"{v:.1%}", ha='center', fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+# Figure 2: Categorical Distributions
+fig2, axes2 = plt.subplots(1, 2, figsize=(12, 5))
+
+# Gender Distribution
+sns.barplot(x=df['Gender_Category'].value_counts(normalize=True).index, 
+            y=df['Gender_Category'].value_counts(normalize=True).values, ax=axes2[0], palette='viridis')
+axes2[0].set_title('Gender Category (-1: Unk, 0: Male, 1: Div)')
+axes2[0].set_ylabel('Proportion')
+
+# Target Distribution
+if 'IS_SUCCESS' in df.columns:
+    sns.barplot(x=df['IS_SUCCESS'].value_counts(normalize=True).index, 
+                y=df['IS_SUCCESS'].value_counts(normalize=True).values, ax=axes2[1], palette='coolwarm')
+    axes2[1].set_title('Target Class Imbalance (IS_SUCCESS)')
+    axes2[1].set_ylabel('Proportion')
+plt.tight_layout()
+plt.show()
+
+# Figure 3: Recency & Target Interaction
+fig3, axes3 = plt.subplots(1, 2, figsize=(14, 5))
+
+# Months since funding (without fallback 999)
+real_months = df[df['Months_Since_Last_Funding'] < 900]['Months_Since_Last_Funding']
+sns.histplot(real_months, bins=30, kde=True, ax=axes3[0], color='blue')
+axes3[0].set_title('Months Since Last Funding (Excl. Fallbacks)')
+axes3[0].set_xlabel('Months')
+
+# Crosstab Overdue vs Success
+if 'IS_SUCCESS' in df.columns:
+    crosstab_data = pd.crosstab(df['Is_Funding_Overdue'], df['IS_SUCCESS'], normalize='index')
+    crosstab_data.plot(kind='bar', stacked=True, ax=axes3[1], colormap='coolwarm')
+    axes3[1].set_title('Success Rate by "Overdue" Status (>24m)')
+    axes3[1].set_ylabel('Proportion')
+    axes3[1].legend(title='IS_SUCCESS', bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.tight_layout()
+plt.show()
+
+# Figure 4: Log Transformations Sanity Check
+plt.figure(figsize=(10, 5))
+log_cols = [f'Log_{c}' for c in cols_to_log]
+sns.boxplot(data=df[log_cols], orient='h', palette='Set2')
+plt.title('Distribution of Log-Transformed Features')
+plt.tight_layout()
+plt.show()
+
+# Print critical text warnings
+print("-" * 40)
+inf_count = np.isinf(df[cols_to_log]).sum()
+if inf_count.sum() > 0:
+    print(f"WARNING: Infinite values detected!\n{inf_count}")
+else:
+    print("No infinite values detected. Log transformation is safe.")
+    
+unknown_count = (df['Months_Since_Last_Funding'] >= 900).sum()
+print(f"Fallbacks applied (999 months): {unknown_count} startups ({unknown_count/len(df):.1%})")
+
+if 'IS_SUCCESS' in df.columns:
+    num_neg = (df['IS_SUCCESS'] == 0).sum()
+    num_pos = (df['IS_SUCCESS'] == 1).sum()
+    if num_pos > 0:
+        print(f"XGBoost scale_pos_weight recommendation: {num_neg / num_pos:.2f}")
+print("-" * 40)
