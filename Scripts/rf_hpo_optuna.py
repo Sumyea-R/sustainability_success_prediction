@@ -22,14 +22,14 @@ df_tune = df[tune_mask].copy()
 test_mask = (df['Company_Age'] >= 5) & (df['Company_Age'] <= 7)
 df_test = df[test_mask].copy()
 
-# For Optuna, it is much faster to explicitly slice the Train and Val sets
+
 X_train_opt = df_tune[df_tune['Company_Age'] >= 9].drop(columns=['IS_SUCCESS'])
 y_train_opt = df_tune[df_tune['Company_Age'] >= 9]['IS_SUCCESS']
 
 X_val_opt = df_tune[df_tune['Company_Age'] == 8].drop(columns=['IS_SUCCESS'])
 y_val_opt = df_tune[df_tune['Company_Age'] == 8]['IS_SUCCESS']
 
-# The untouched holdout set
+
 X_test = df_test.drop(columns=['IS_SUCCESS'])
 y_test = df_test['IS_SUCCESS']
 
@@ -40,7 +40,7 @@ print(f"Holdout Test Set (Age 5-7): {len(X_test)} startups\n")
 
 # Optuna's objective function for Random Forest
 def objective(trial):
-    # 1. Define the continuous and discrete search space
+    # Define the continuous and discrete search space
     param = {
         'n_estimators': trial.suggest_int('n_estimators', 300, 800),
         'max_depth': trial.suggest_categorical('max_depth', [None, 20, 30, 40, 50]),
@@ -52,14 +52,14 @@ def objective(trial):
         'random_state': 42
     }
     
-    # 2. Initialize and train the model on the strict Age >= 9 training set
+    # Initialize and train the model on the strict Age >= 9 training set
     rf = RandomForestClassifier(**param)
     rf.fit(X_train_opt, y_train_opt)
     
-    # 3. Predict strictly on the Age == 8 validation set
+    # Predict strictly on the Age == 8 validation set
     preds = rf.predict(X_val_opt)
     
-    # 4. Return the F1-score of the Success class for Optuna to maximize
+    # Return the F1-score of the Success class for Optuna to maximize
     return f1_score(y_val_opt, preds)
 
 
@@ -69,11 +69,9 @@ study = optuna.create_study(direction='maximize')
 study.optimize(objective, n_trials=50)
 
 
-print("\n--- BEST HYPERPARAMETERS (OPTUNA) ---")
 print(study.best_params)
 
 # Train the absolute final model using the best params on the FULL tuning set
-print("\n--- EVALUATING OPTUNA MODEL ON UNTOUCHED TEST SET ---")
 best_params = study.best_params
 best_params['class_weight'] = 'balanced'
 best_params['random_state'] = 42

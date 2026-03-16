@@ -32,7 +32,6 @@ test_mask = (df['Company_Age'] >= 5) & (df['Company_Age'] <= 7)
 df_train = df[train_mask]
 df_test = df[test_mask]
 
-print(f"\n--- Cohort Split Results ---")
 print(f"Training Set (Age >= 8):  {len(df_train)} startups")
 print(f"Testing Set  (Age 5-7):   {len(df_test)} startups")
 print(f"Excluded     (Age < 5):   {len(df) - len(df_train) - len(df_test)} startups")
@@ -45,12 +44,12 @@ X_test = df_test.drop(columns=['IS_SUCCESS'])
 y_test = df_test['IS_SUCCESS']
 
 
-print("\nTraining the Random Forest model on Mature Cohort...")
+print("\nTraining the Random Forest model...")
 rf_model = RandomForestClassifier(
     n_estimators=200, 
-    max_depth=15,             # Added max_depth to prevent extreme overfitting on the older cohort
+    max_depth=15,            
     random_state=42, 
-    class_weight='balanced',  # Automatically handles the class imbalance
+    class_weight='balanced',  
     n_jobs=-1
 )
 
@@ -59,5 +58,4 @@ rf_model.fit(X_train, y_train)
 
 y_pred = rf_model.predict(X_test)
 
-print("\n--- Out-Of-Time Classification Report (Random Forest) ---")
 print(classification_report(y_test, y_pred))

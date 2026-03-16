@@ -40,7 +40,7 @@ print(f"Validation Fold (Age = 8): {(test_fold == 0).sum()} startups")
 print(f"Holdout Test Set (Age 5-7): {len(df_test)} startups\n")
 
 
-# Define a rigorous search space for Random Forest
+# Define search space for Random Forest
 param_distributions_rf = {
     'n_estimators': [100, 200, 300, 500],
     'max_depth': [5, 10, 15, 20, 25, None],
@@ -56,7 +56,7 @@ rf_base = RandomForestClassifier(
 )
 
 # Random search
-print("Running rigorous hyperparameter optimization for Random Forest... (This may take a few minutes)")
+print("Running hyperparameter optimization for Random Forest...)")
 random_search_rf = RandomizedSearchCV(
     estimator=rf_base,
     param_distributions=param_distributions_rf,
@@ -71,10 +71,8 @@ random_search_rf = RandomizedSearchCV(
 random_search_rf.fit(X_tune, y_tune)
 
 
-print("\n--- BEST HYPERPARAMETERS (RANDOM FOREST) ---")
 print(random_search_rf.best_params_)
 
-print("\n--- EVALUATING OPTIMIZED RF MODEL ON UNTOUCHED TEST SET ---")
 best_rf_model = random_search_rf.best_estimator_
 y_pred_test_rf = best_rf_model.predict(X_test)
 

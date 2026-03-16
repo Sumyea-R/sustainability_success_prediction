@@ -70,10 +70,10 @@ grid_search_rf = GridSearchCV(
 grid_search_rf.fit(X_tune, y_tune)
 
 
-print("\n--- BEST HYPERPARAMETERS (GRID SEARCH) ---")
+
 print(grid_search_rf.best_params_)
 
-print("\n--- EVALUATING GRID SEARCH MODEL ON UNTOUCHED TEST SET ---")
+
 best_gs_rf_model = grid_search_rf.best_estimator_
 y_pred_test_gs = best_gs_rf_model.predict(X_test)
 

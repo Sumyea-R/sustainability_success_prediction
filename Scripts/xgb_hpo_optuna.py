@@ -106,7 +106,7 @@ best_params['scale_pos_weight'] = scale_pos_weight_full
 best_params['random_state'] = 42
 best_params['n_jobs'] = -1
 
-# Initialize the final model (without early stopping, since we are using all tuning data)
+# Initialize the final model
 final_xgb_model = XGBClassifier(**best_params)
 
 # Fit on combined Train + Val (Age >= 8)

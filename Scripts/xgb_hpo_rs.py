@@ -18,7 +18,7 @@ leaky_columns = ['Months_Since_Last_Funding', 'Is_Funding_Overdue']
 df = df.drop(columns=[col for col in leaky_columns if col in df.columns])
 
 
-# 1. Tuning Data (Train + Validation)
+# Tuning Data (Train + Validation)
 tune_mask = df['Company_Age'] >= 8
 df_tune = df[tune_mask].copy()
 
@@ -33,7 +33,7 @@ X_test = df_test.drop(columns=['IS_SUCCESS'])
 y_test = df_test['IS_SUCCESS']
 
 
-# We assign -1 to training rows, and 0 to validation rows.
+# Assign -1 to training rows, and 0 to validation rows.
 # Train on Age >= 9, Validate on Age == 8
 test_fold = np.where(df_tune['Company_Age'] == 8, 0, -1)
 ps = PredefinedSplit(test_fold)
@@ -53,10 +53,10 @@ param_distributions = {
     'n_estimators': [100, 200, 300, 500],
     'max_depth': [3, 5, 7, 10],
     'learning_rate': [0.01, 0.05, 0.1, 0.2],
-    'subsample': [0.6, 0.8, 1.0],               # Prevents overfitting
-    'colsample_bytree': [0.6, 0.8, 1.0],        # Prevents overfitting
-    'min_child_weight': [1, 3, 5, 7],           # Minimum sum of instance weight needed in a child
-    'gamma': [0, 0.1, 0.5, 1, 5]                # Minimum loss reduction required to make a split
+    'subsample': [0.6, 0.8, 1.0],               
+    'colsample_bytree': [0.6, 0.8, 1.0],        
+    'min_child_weight': [1, 3, 5, 7],           
+    'gamma': [0, 0.1, 0.5, 1, 5]                
 }
 
 xgb_base = xgb.XGBClassifier(
@@ -67,14 +67,14 @@ xgb_base = xgb.XGBClassifier(
 )
 
 
-print("Running rigorous hyperparameter optimization... (This may take a few minutes)")
-# n_iter=50 means it will test 50 random combinations from the grid above
+print("Running rigorous hyperparameter optimization...")
+
 random_search = RandomizedSearchCV(
     estimator=xgb_base,
     param_distributions=param_distributions,
     n_iter=50, 
-    scoring='f1',       # Optimizing specifically for the F1-score of the Success class
-    cv=ps,              # CRITICAL: Using our custom time-based split
+    scoring='f1',       
+    cv=ps,              
     verbose=1,
     random_state=42,
     n_jobs=-1
@@ -83,10 +83,8 @@ random_search = RandomizedSearchCV(
 random_search.fit(X_tune, y_tune)
 
 
-print("\n--- BEST HYPERPARAMETERS ---")
 print(random_search.best_params_)
 
-print("\n--- EVALUATING OPTIMIZED MODEL ON UNTOUCHED TEST SET ---")
 best_xgb_model = random_search.best_estimator_
 y_pred_test = best_xgb_model.predict(X_test)
 

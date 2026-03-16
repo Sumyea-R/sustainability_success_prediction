@@ -20,7 +20,7 @@ elif 'ID' in df.columns:
     df = df.set_index('ID')
 
 
-# We must drop these because they are calculated relative to 2026, which breaks the time machine rule
+# drop these because they are calculated relative to 2026, which breaks the time machine rule
 leaky_columns = ['Months_Since_Last_Funding', 'Is_Funding_Overdue']
 df = df.drop(columns=[col for col in leaky_columns if col in df.columns])
 
@@ -37,7 +37,7 @@ test_mask = (df['Company_Age'] >= 5) & (df['Company_Age'] <= 7)
 df_train = df[train_mask]
 df_test = df[test_mask]
 
-print(f"\n--- Cohort Split Results ---")
+
 print(f"Training Set (Age >= 8):  {len(df_train)} startups")
 print(f"Testing Set  (Age 5-7):   {len(df_test)} startups")
 print(f"Excluded     (Age < 5):   {len(df) - len(df_train) - len(df_test)} startups")
@@ -56,7 +56,7 @@ num_pos = (y_train == 1).sum()
 scale_weight = num_neg / num_pos if num_pos > 0 else 1.0
 print(scale_weight)
 
-print("\nTraining the XGBoost model on Mature Cohort...")
+print("\nTraining the XGBoost model...")
 xgb_model = xgb.XGBClassifier(
     n_estimators=200,
     max_depth=5,
@@ -73,70 +73,8 @@ xgb_model.fit(X_train, y_train)
 y_pred = xgb_model.predict(X_test)
 y_probs = xgb_model.predict_proba(X_test)[:, 1]
 
-print("\n--- Out-Of-Time Classification Report (Younger Cohort) ---")
+
 print(classification_report(y_test, y_pred))
 
 
 
-
-
-"""
-# Let's look at standard feature importance first
-importances = xgb_model.feature_importances_
-feature_names = X_train.columns
-
-feature_importance_df = pd.DataFrame({
-    'Feature': feature_names,
-    'Importance': importances
-}).sort_values(by='Importance', ascending=False)
-
-print("\n--- Top 15 Most Important Features (OOT Model) ---")
-print(feature_importance_df.head(15))
-
-# Plot Feature Importance
-plt.figure(figsize=(10, 6))
-sns.barplot(x='Importance', y='Feature', data=feature_importance_df.head(15), hue='Feature', palette='magma', legend=False)
-plt.title('Top 15 Predictors of Future Success (Trained on Mature Startups)', fontsize=14)
-plt.xlabel('Relative Importance', fontsize=12)
-plt.ylabel('')
-plt.tight_layout()
-plt.show()
-
-
-
-print("\nCalculating SHAP values... (this may take a minute)")
-
-# Initialize the TreeExplainer with your trained XGBoost model
-explainer = shap.TreeExplainer(xgb_model)
-
-# Calculate SHAP values for the Test Set (Younger Cohort)
-# We use X_test so we are interpreting how the model makes decisions on the "future" data
-shap_values = explainer.shap_values(X_test)
-
-
-# This looks at the mean absolute SHAP value for each feature.
-# It is more reliable than XGBoost's built-in feature importance.
-plt.figure(figsize=(12, 8))
-shap.summary_plot(shap_values, X_test, plot_type="bar", max_display=15, show=False)
-plt.title('SHAP Global Feature Importance (Top 15)', fontsize=16)
-plt.tight_layout()
-plt.show()
-
-
-# It shows not just what is important, but how it impacts the prediction.
-plt.figure(figsize=(12, 8))
-shap.summary_plot(shap_values, X_test, max_display=15, show=False)
-plt.title('SHAP Summary: Directional Impact on Success', fontsize=16)
-plt.tight_layout()
-plt.show()
-
-
-# How does Funding interact with the prediction
-top_feature = "Log_Funding_Total_USD"
-if top_feature in X_test.columns:
-    plt.figure(figsize=(10, 6))
-    shap.dependence_plot(top_feature, shap_values, X_test, show=False)
-    plt.title(f'SHAP Dependence Plot: {top_feature}', fontsize=14)
-    plt.tight_layout()
-    plt.show()
-    """

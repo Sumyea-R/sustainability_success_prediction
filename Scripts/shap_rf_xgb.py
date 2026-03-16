@@ -49,7 +49,7 @@ rf_best = RandomForestClassifier(
 rf_best.fit(X_tune_full, y_tune_full)
 
 # 3B. XGBoost (Optuna Best)
-# Calculating precise scale_pos_weight for your specific tuning set
+# Calculating precise scale_pos_weight for specific tuning set
 scale_pos_weight_full = (y_tune_full == 0).sum() / (y_tune_full == 1).sum()
 
 xgb_best = XGBClassifier(
@@ -89,7 +89,7 @@ print("\nCalculating SHAP values... (Using a 1,000-row sample to prevent freezin
 # 1. Take a random sample of 1,000 startups from the test set. 
 X_test_sampled = X_test.sample(n=1000, random_state=42)
 
-# 2. XGBoost SHAP (Running this first because it is significantly faster)
+# 2. XGBoost SHAP 
 print("Running XGBoost SHAP...")
 explainer_xgb = shap.TreeExplainer(xgb_best)
 shap_values_xgb = explainer_xgb(X_test_sampled)
