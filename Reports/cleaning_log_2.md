@@ -237,3 +237,82 @@ Top global predictors:
 1. Log_Funding_Total_USD (log transformed total funding amount, more funding leads to success)
 2. Total_Rounds (total funding rounds, the more funding rounds, the higher the chance for success)
 3. Num_Investors (high number of investors leads to success)
+
+
+
+
+#### Further improvements
+
+1. Lower dimensionality: 
+   - removed sub-industry OHE, since top 60 only covered 75%
+   - instead: applied a Out-of-Fold Target Encoding to prevent data leakage and lower dimensionality to only 1 column
+
+2. Patents
+   - added col: Has_patents, Num_patents
+
+3. Removed: Months_Since_Last_Funding, Funding_Overdue columns from table (data leakage, but they have never been used for training)
+
+
+### Performance on improved data set:
+
+--- Best Random Forest Parameters ---
+{'n_estimators': 405, 'max_depth': None, 'min_samples_split': 38, 'min_samples_leaf': 12, 'max_features': 0.31460194724579776}
+
+--- Best XGBoost Parameters ---
+{'max_depth': 4, 'learning_rate': 0.025456666165296526, 'subsample': 0.6398681324505449, 'colsample_bytree': 0.7392042533970905, 'min_child_weight': 11}
+Optimal number of trees (via early stopping): 354
+
+
+
+--- Random Forest ---
+ROC-AUC Score: 0.8266
+              precision    recall  f1-score   support
+
+           0       0.79      0.82      0.80      3793
+           1       0.73      0.69      0.71      2682
+
+    accuracy                           0.77      6475
+   macro avg       0.76      0.75      0.76      6475
+weighted avg       0.76      0.77      0.76      6475
+
+
+--- XGBoost ---
+ROC-AUC Score: 0.8252
+              precision    recall  f1-score   support
+
+           0       0.79      0.81      0.80      3793
+           1       0.72      0.69      0.71      2682
+
+    accuracy                           0.76      6475
+   macro avg       0.76      0.75      0.75      6475
+weighted avg       0.76      0.76      0.76      6475
+
+
+#### Comparision with Neural Network 
+
+Best Parameters found by Optuna:
+  n_layers: 3
+  dropout_rate: 0.23623982311067843
+  learning_rate: 0.004428709587908151
+  l2_reg: 0.0007675234496313034
+  units_layer_0: 128
+  units_layer_1: 112
+  units_layer_2: 96
+  batch_size: 64
+  threshold: 0.4120038215734789
+
+  ==================================================
+FINAL HOLDOUT EVALUATION (ADVANCED NEURAL NETWORK)
+==================================================
+ROC-AUC Score: 0.8228
+              precision    recall  f1-score   support
+
+           0       0.81      0.76      0.78      3793
+           1       0.68      0.74      0.71      2682
+
+    accuracy                           0.75      6475
+   macro avg       0.74      0.75      0.75      6475
+weighted avg       0.75      0.75      0.75      6475
+
+
+=> Achieves same ROC-AUC Score as XGB and RF do ~0.82

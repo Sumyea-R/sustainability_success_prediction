@@ -1,2 +1,4 @@
 /Data/Dealroom_Companies_SDG.csv filter=lfs diff=lfs merge=lfs -text
 /Data_Raw/Dealroom_Companies_SDG.csv filter=lfs diff=lfs merge=lfs -text
+/Data_Raw/TU_Berlin_data_request_alumni_companies_v3_csv.csv filter=lfs diff=lfs merge=lfs -text
+/Data_Raw/TU_Berlin_data_request_alumni_companies_v4_csv.csv filter=lfs diff=lfs merge=lfs -text
