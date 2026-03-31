@@ -301,7 +301,7 @@ Best Parameters found by Optuna:
   batch_size: 64
   threshold: 0.4120038215734789
 
-  ==================================================
+==================================================
 FINAL HOLDOUT EVALUATION (ADVANCED NEURAL NETWORK)
 ==================================================
 ROC-AUC Score: 0.8228
@@ -316,3 +316,24 @@ weighted avg       0.75      0.75      0.75      6475
 
 
 => Achieves same ROC-AUC Score as XGB and RF do ~0.82
+
+
+
+#### Train baseline model: Logistic Regression
+
+--- Best Logistic Regression Parameters ---
+{'C': 0.000715956973380679, 'penalty': 'l2'}
+
+==================================================
+EVALUATION ON UNTOUCHED HOLDOUT SET (Age 5-7)
+==================================================
+ROC-AUC Score: 0.8234
+
+              precision    recall  f1-score   support
+
+           0       0.77      0.88      0.82      3793
+           1       0.78      0.62      0.69      2682
+
+    accuracy                           0.77      6475
+   macro avg       0.78      0.75      0.76      6475
+weighted avg       0.77      0.77      0.77      6475
