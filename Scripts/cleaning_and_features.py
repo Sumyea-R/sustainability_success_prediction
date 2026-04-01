@@ -142,13 +142,22 @@ def encode_top_n_multilabel(dataframe, column_name, prefix, top_n=20):
     
     # Find top 20 most common items
     all_items = [item for sublist in lists for item in sublist]
-    top_items = [item for item, count in Counter(all_items).most_common(top_n)]
+    top_items = set(item for item, count in Counter(all_items).most_common(top_n))
     
-    # Filter lists to only include top items
-    def filter_top(l):
-        return [i for i in l if i in top_items]
+    # Filter lists to only include top items, rest will be treated as "other" (all zeros in the encoding)
+    def filter_top_with_other(l):
+    # Keep only the items that are in the Top N
+        filtered = [i for i in l if i in top_items]
+
+        # If the filtered list is shorter than the original list, 
+        # it means we dropped at least one rare item. 
+        # So, we flag this startup as having an 'Other' category.
+        if len(filtered) < len(l):
+            filtered.append("Other")
+
+        return filtered
     
-    filtered_lists = lists.apply(filter_top)
+    filtered_lists = lists.apply(filter_top_with_other)
     
     # Binarize the filtered lists
     mlb = MultiLabelBinarizer()
@@ -156,6 +165,7 @@ def encode_top_n_multilabel(dataframe, column_name, prefix, top_n=20):
     
     # Clean column names: replace spaces and special chars
     cols = [f"{prefix}_{c.replace(' ', '_').replace('&', '').replace('__', '_')}" for c in mlb.classes_]
+    
     return pd.DataFrame(encoded, columns=cols, index=dataframe.index)
 
 # Parse client focus to extract b2b/b2c focus, allowing for multiple labels
@@ -306,10 +316,19 @@ df['Months_Since_Last_Funding'] = df.apply(
 df['Is_Funding_Overdue'] = (df['Months_Since_Last_Funding'] > 24).astype(int)
 new_recency_features = ['Months_Since_Last_Funding', 'Is_Funding_Overdue']
 
+
+
+# Add binary feature indicating whether the startup has any patents, as the raw count may be very skewed and have many zeros
+df['Has_patents'] = (df['Number of patents'] > 0).astype(int)
+ # Cap patents at 99th percentile to reduce outlier impact  
+df['Num_patents'] = df['Number of patents'].clip(upper=(df['Number of patents'].quantile(0.99)))  
+
 # Log transformation of (extreme) numeric values
-cols_to_log = ['Funding_Total_USD', 'Capital_Intensity', 'Avg_Round_Size']
+cols_to_log = ['Funding_Total_USD', 'Capital_Intensity', 'Avg_Round_Size', 'Num_patents']
 for col in cols_to_log:
     df[f'Log_{col}'] = np.log1p(df[col])
+
+
 
 
 
@@ -329,7 +348,9 @@ keep_numeric = [
     'Has_Top_Uni_Founder',
     'IS_SUCCESS',
     'Months_Since_Last_Funding', 
-    'Is_Funding_Overdue'
+    'Is_Funding_Overdue',
+    'Has_patents',
+    'Num_patents' 
 ]
 
 
@@ -519,3 +540,14 @@ if 'IS_SUCCESS' in df.columns:
     if num_pos > 0:
         print(f"XGBoost scale_pos_weight recommendation: {num_neg / num_pos:.2f}")
 print("-" * 40)
+
+
+# Check correlations of patent features with target
+correlations = df[['Has_patents', 'Num_patents', 'IS_SUCCESS']].corr()[['IS_SUCCESS']].sort_values(by='IS_SUCCESS', ascending=False)
+correlations = correlations.drop(index='IS_SUCCESS')  # Drop self-correlation
+# Visualize correlations with a heatmap
+plt.figure(figsize=(6, 8))
+sns.heatmap(correlations, annot=True, cmap='coolwarm', vmin=-1, vmax=1, fmt='.2f', cbar_kws={'label': 'Pearson Correlation'})
+
+plt.title('Correlation of Patent Features with IS_SUCCESS')
+plt.show()
