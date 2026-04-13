@@ -66,8 +66,7 @@ def calculate_employee_lifetime_cagr(row):
     else:
         return 0
 
-    # FIX: Use dynamic current year instead of hardcoding
-    current_year = datetime.now().year
+    current_year = 2026
     num_years = current_year - launch_year
     
     if num_years < 5:

@@ -10,7 +10,7 @@ Financial data such as profit is highly distorted due to Corona pandemic that le
 (IPO) or (M&A) or ((survived 5+ years) and (>20% employee CAGR over year 2 to year 5 after founding)).
 
 for X:
-remove all entries where Launch year < 2016
+remove all entries where Launch year < 2016–
 remove all entries where Launch year > 2021 (survival of 5+ years)
 as employee data starts 2016 and startup needs to survive at least 5 years (2026-2021=5)
 
