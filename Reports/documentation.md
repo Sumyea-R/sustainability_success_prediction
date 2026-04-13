@@ -64,7 +64,7 @@ Added Has_patents column if number of patents > 0
 
 Then I log-transformed Total_Rounds, Avg_Round_Size and Capital_Intensity 
 
-### Dataset Overview
+## Dataset Overview
 
 * **Total Entries (Pre-cleaning):** 26,503
 * **Total Entries (Post-deduplication):** 26,454
@@ -72,7 +72,7 @@ Then I log-transformed Total_Rounds, Avg_Round_Size and Capital_Intensity
 
 ---
 
-### Coverage & Distributions
+## Coverage & Distributions
 
 **Country Coverage Check**
 * **Top Countries:** 94.3%
@@ -95,7 +95,7 @@ Then I log-transformed Total_Rounds, Avg_Round_Size and Capital_Intensity
 
 ---
 
-### 📈 Log-Transformed Features Analysis
+##  Log-Transformed Features Analysis
 
 **Summary Statistics**
 
