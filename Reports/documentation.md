@@ -64,48 +64,58 @@ Added Has_patents column if number of patents > 0
 
 Then I log-transformed Total_Rounds, Avg_Round_Size and Capital_Intensity 
 
+### Dataset Overview
 
+* **Total Entries (Pre-cleaning):** 26,503
+* **Total Entries (Post-deduplication):** 26,454
+* **Industry:** 4.0% of startups do not fall within a Top-20 Industry.
 
-Entries before removing duplicates: 26503
+---
 
-Entries after removing duplicates: 26454
+### Coverage & Distributions
 
-Startups without Top-20 Industry: 4.0%
+**Country Coverage Check**
+* **Top Countries:** 94.3%
+* **'Long Tail' Countries:** 5.7%
 
-Distribution of gender category:
-Gender_Category
--1    0.533341
- 0    0.355485
- 1    0.111174
-Name: proportion, dtype: float64
-IS_SUCCESS
-0    0.621948
-1    0.378052
-Name: proportion, dtype: float64
---- Country Coverage Check ---
-Top countries cover: 94.3%
-Startups in 'long tail': 5.7%
+**Gender Category Distribution**
+| Gender Category | Proportion | Percentage |
+| :--- | :--- | :--- |
+| **-1** | 0.533341 | 53.33% |
+| **0** | 0.355485 | 35.55% |
+| **1** | 0.111174 | 11.12% |
 
+**Success Target (`IS_SUCCESS`) Distribution**
+| Status | Proportion | Percentage |
+| :--- | :--- | :--- |
+| **0** (Unsuccessful) | 0.621948 | 62.19% |
+| **1** (Successful) | 0.378052 | 37.81% |
 
-------------------------------
-       Log_Funding_Total_USD  Log_Capital_Intensity  Log_Avg_Round_Size
-count               26454.00               26454.00            18242.00
-mean                    1.01                   0.64                0.89
-std                     1.51                   1.04                1.10
-min                     0.00                   0.00                0.00
-25%                     0.00                   0.00                0.01
-50%                     0.06                   0.03                0.45
-75%                     1.69                   0.93                1.39
-max                     9.42                   7.84                7.84
+> **Note:** The distribution ratio of unsuccessful to successful startups (0/1) is **1.65**.
 
-----------------------------------------
-Funding_Total_USD    0
-Capital_Intensity    0
-Avg_Round_Size       0
-dtype: int64
-No infinite values detected. Log transformation seems safe.
-----------------------------------------
-Distribution of success 0/1: 1.65
+---
+
+### 📈 Log-Transformed Features Analysis
+
+**Summary Statistics**
+
+| Statistic | `Log_Funding_Total_USD` | `Log_Capital_Intensity` | `Log_Avg_Round_Size` |
+| :--- | :--- | :--- | :--- |
+| **Count** | 26,454.00 | 26,454.00 | 18,242.00 |
+| **Mean** | 1.01 | 0.64 | 0.89 |
+| **Std Dev** | 1.51 | 1.04 | 1.10 |
+| **Min** | 0.00 | 0.00 | 0.00 |
+| **25%** | 0.00 | 0.00 | 0.01 |
+| **50%** | 0.06 | 0.03 | 0.45 |
+| **75%** | 1.69 | 0.93 | 1.39 |
+| **Max** | 9.42 | 7.84 | 7.84 |
+
+**Data Integrity Checks**
+
+* **Missing Values:** * `Funding_Total_USD`: 0
+    * `Capital_Intensity`: 0
+    * `Avg_Round_Size`: 0
+* **Transformation Safety:** No infinite values detected. The log transformation appears safe.
 
 
 # 4. Model Training
@@ -113,85 +123,97 @@ For finding the best machine learning model to make predictions on the dataset, 
 All models are trained on a time-based train-test-split: training on startups older or equal 9 years, validation on startups with the age of 8 years (to prevent overfitting) and tested on startups 5-7 years old. 
 For all models, bayesian hyperparameter optimization with optuna proved to produce the best results.
 
-## Baseline: Logistic Regression
+## 1. Baseline: Logistic Regression
 
---- Best Logistic Regression Parameters ---
-{'C': 0.000715956973380679, 'penalty': 'l2'}
+**Best Parameters:**
+* `C`: 0.000715956973380679
+* `penalty`: 'l2'
 
+> **ROC-AUC Score: 0.8234**
 
-ROC-AUC Score: 0.8234
+**Classification Report:**
 
-              precision    recall  f1-score   support
+| Class / Metric | Precision | Recall | F1-Score | Support |
+| :--- | :--- | :--- | :--- | :--- |
+| **0** | 0.77 | 0.88 | 0.82 | 3793 |
+| **1** | 0.78 | 0.62 | 0.69 | 2682 |
+| **Accuracy** | | | **0.77** | 6475 |
+| **Macro Avg** | 0.78 | 0.75 | 0.76 | 6475 |
+| **Weighted Avg** | 0.77 | 0.77 | 0.77 | 6475 |
 
-           0       0.77      0.88      0.82      3793
-           1       0.78      0.62      0.69      2682
+---
 
-    accuracy                           0.77      6475
-   macro avg       0.78      0.75      0.76      6475
-weighted avg       0.77      0.77      0.77      6475
+## 2. Random Forest
 
+**Best Parameters:**
+* `n_estimators`: 405
+* `max_depth`: None
+* `min_samples_split`: 38
+* `min_samples_leaf`: 12
+* `max_features`: 0.31460194724579776
 
+> **ROC-AUC Score: 0.8266**
 
-## Random Forest
+**Classification Report:**
 
---- Best Random Forest Parameters ---
-{'n_estimators': 405, 'max_depth': None, 'min_samples_split': 38, 'min_samples_leaf': 12, 'max_features': 0.31460194724579776}
+| Class / Metric | Precision | Recall | F1-Score | Support |
+| :--- | :--- | :--- | :--- | :--- |
+| **0** | 0.79 | 0.82 | 0.80 | 3793 |
+| **1** | 0.73 | 0.69 | 0.71 | 2682 |
+| **Accuracy** | | | **0.77** | 6475 |
+| **Macro Avg** | 0.76 | 0.75 | 0.76 | 6475 |
+| **Weighted Avg** | 0.76 | 0.77 | 0.76 | 6475 |
 
+---
 
-ROC-AUC Score: 0.8266
-              precision    recall  f1-score   support
+## 3. XGBoost
 
-           0       0.79      0.82      0.80      3793
-           1       0.73      0.69      0.71      2682
+**Best Parameters:**
+* `max_depth`: 4
+* `learning_rate`: 0.025456666165296526
+* `subsample`: 0.6398681324505449
+* `colsample_bytree`: 0.7392042533970905
+* `min_child_weight`: 11
+* **Optimal number of trees (via early stopping):** 354
 
-    accuracy                           0.77      6475
-   macro avg       0.76      0.75      0.76      6475
-weighted avg       0.76      0.77      0.76      6475
+> **ROC-AUC Score: 0.8252**
 
+**Classification Report:**
 
-## XGBoost
+| Class / Metric | Precision | Recall | F1-Score | Support |
+| :--- | :--- | :--- | :--- | :--- |
+| **0** | 0.79 | 0.81 | 0.80 | 3793 |
+| **1** | 0.72 | 0.69 | 0.71 | 2682 |
+| **Accuracy** | | | **0.76** | 6475 |
+| **Macro Avg** | 0.76 | 0.75 | 0.75 | 6475 |
+| **Weighted Avg** | 0.76 | 0.76 | 0.76 | 6475 |
 
---- Best XGBoost Parameters ---
-{'max_depth': 4, 'learning_rate': 0.025456666165296526, 'subsample': 0.6398681324505449, 'colsample_bytree': 0.7392042533970905, 'min_child_weight': 11}
-Optimal number of trees (via early stopping): 354
+---
 
+## 4. Neural Network
 
-ROC-AUC Score: 0.8252
-              precision    recall  f1-score   support
+**Best Parameters (found by Optuna):**
+* `n_layers`: 3
+* `dropout_rate`: 0.23623982311067843
+* `learning_rate`: 0.004428709587908151
+* `l2_reg`: 0.0007675234496313034
+* `units_layer_0`: 128
+* `units_layer_1`: 112
+* `units_layer_2`: 96
+* `batch_size`: 64
+* `threshold`: 0.4120038215734789
 
-           0       0.79      0.81      0.80      3793
-           1       0.72      0.69      0.71      2682
+> **ROC-AUC Score: 0.8228**
 
-    accuracy                           0.76      6475
-   macro avg       0.76      0.75      0.75      6475
-weighted avg       0.76      0.76      0.76      6475
+**Classification Report:**
 
-
-## Neural Network
-
-Best Parameters found by Optuna:
-  n_layers: 3
-  dropout_rate: 0.23623982311067843
-  learning_rate: 0.004428709587908151
-  l2_reg: 0.0007675234496313034
-  units_layer_0: 128
-  units_layer_1: 112
-  units_layer_2: 96
-  batch_size: 64
-  threshold: 0.4120038215734789
-
-
-ROC-AUC Score: 0.8228
-              precision    recall  f1-score   support
-
-           0       0.81      0.76      0.78      3793
-           1       0.68      0.74      0.71      2682
-
-    accuracy                           0.75      6475
-   macro avg       0.74      0.75      0.75      6475
-weighted avg       0.75      0.75      0.75      6475
-
-
+| Class / Metric | Precision | Recall | F1-Score | Support |
+| :--- | :--- | :--- | :--- | :--- |
+| **0** | 0.81 | 0.76 | 0.78 | 3793 |
+| **1** | 0.68 | 0.74 | 0.71 | 2682 |
+| **Accuracy** | | | **0.75** | 6475 |
+| **Macro Avg** | 0.74 | 0.75 | 0.75 | 6475 |
+| **Weighted Avg** | 0.75 | 0.75 | 0.75 | 6475 |
 
 
 ## Ranking and Performance Evaluation
