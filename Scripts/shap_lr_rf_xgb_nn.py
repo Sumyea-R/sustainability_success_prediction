@@ -592,3 +592,61 @@ shap.summary_plot(
 )
 plt.tight_layout()
 plt.show()
+
+
+
+# Helper function to extract metrics from your models
+def extract_metrics(y_true, y_pred, model_name):
+    # output_dict=True allows us to grab the exact numbers
+    report = classification_report(y_true, y_pred, output_dict=True)
+    
+    return {
+        'Model': model_name,
+        'Accuracy': report['accuracy'],
+        'Class 0 Precision': report['0']['precision'],
+        'Class 0 Recall': report['0']['recall'],
+        'Class 1 Precision': report['1']['precision'],
+        'Class 1 Recall': report['1']['recall']
+    }
+
+# Gather metrics for all your trained models
+table_data = [
+    extract_metrics(y_test, lr_preds, 'Logistic Regression'),
+    extract_metrics(y_test, rf_preds, 'Random Forest'),
+    extract_metrics(y_test, xgb_preds, 'XGBoost'),
+    extract_metrics(y_test, y_pred_test_opt, 'Neural Network')
+]
+
+# Define a MultiIndex for the columns to group them like the image
+columns = pd.MultiIndex.from_tuples([
+    ('Overall', 'Accuracy'),
+    ('Class 0 (Failure)', 'Precision'),
+    ('Class 0 (Failure)', 'Recall'),
+    ('Class 1 (Success)', 'Precision'),
+    ('Class 1 (Success)', 'Recall')
+])
+
+# Build the DataFrame
+df_results = pd.DataFrame(
+    [[
+        row['Accuracy'],
+        row['Class 0 Precision'],
+        row['Class 0 Recall'],
+        row['Class 1 Precision'],
+        row['Class 1 Recall']
+    ] for row in table_data],
+    index=[row['Model'] for row in table_data],
+    columns=columns
+)
+
+# Print the clean console version
+print("\n" + "="*50)
+print("FINAL MODEL COMPARISON TABLE")
+print("="*50)
+print(df_results.round(3))
+
+# Export to LaTeX format 
+latex_table = df_results.style.format("{:.3f}").to_latex(hrules=True)
+
+print("\n--- LaTeX Code for Publication ---")
+print(latex_table)
