@@ -25,11 +25,14 @@ country_cols = df.filter(regex='^Country_')
 # Calculate percentages and sort
 country_props = (country_cols.mean() * 100).sort_values(ascending=False)
 
+# Clean up the labels for the chart by removing the "Country_" prefix
+country_props.index = country_props.index.str.replace('Country_', '')
+
 
 # Plot
 plt.figure(figsize=(12, 5))
 sns.barplot(x=country_props.values, y=country_props.index)
-plt.title("Top 20 Countries by Proportion and Others")
+plt.title("Top 20 Countries Distribution")
 plt.xlabel("Percentage (%)")
 
 # Add the exact percentage text to the end of each bar
@@ -62,7 +65,7 @@ ax = sns.barplot(
 )
 
 # Add formatting and labels
-plt.title("Distribution by Industry", fontsize=14, pad=15)
+plt.title("Top 20 Industries Distribution")
 plt.xlabel("Percentage of Dataset (%)", fontsize=12)
 
 
