@@ -2,117 +2,194 @@ import os
 import pandas as pd
 import numpy as np
 import optuna
-from xgboost import XGBClassifier
-from sklearn.metrics import f1_score, classification_report
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (
+    classification_report, 
+    average_precision_score, 
+    roc_auc_score, 
+    confusion_matrix,
+    precision_recall_curve
+)
+import matplotlib.pyplot as plt
+import warnings
 
+# Suppress warnings for cleaner terminal output
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+warnings.filterwarnings('ignore')
 
+# ==============================================================================
+# 1. SETUP & DATA LOADING
+# ==============================================================================
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
 data_clean_folder = os.path.abspath(os.path.join(current_dir, "..", "Data_Clean"))
-input_file = os.path.join(data_clean_folder, "dealroom_clean_features.csv")
+input_file = os.path.join(data_clean_folder, "dealroom_2021_snapshot_features.csv")
 
+print(f"Loading data from: {input_file}")
 df = pd.read_csv(input_file, sep=';')
-if 'ID' in df.columns: df = df.set_index('ID')
-if 'Name' in df.columns: df = df.drop(columns=['Name'])
 
-leaky_columns = ['Months_Since_Last_Funding', 'Is_Funding_Overdue']
-df = df.drop(columns=[col for col in leaky_columns if col in df.columns])
+if 'ID' in df.columns: 
+    df = df.set_index('ID')
+if 'Name' in df.columns: 
+    df = df.drop(columns=['Name'])
 
+targets = ['IS_EXIT', 'IS_HIGH_GROWTH']
 
-tune_mask = df['Company_Age'] >= 8
-df_tune = df[tune_mask].copy()
-
-test_mask = (df['Company_Age'] >= 5) & (df['Company_Age'] <= 7)
-df_test = df[test_mask].copy()
-
-# For Optuna, explicitly slice the Train and Val sets
-X_train_opt = df_tune[df_tune['Company_Age'] >= 9].drop(columns=['IS_SUCCESS'])
-y_train_opt = df_tune[df_tune['Company_Age'] >= 9]['IS_SUCCESS']
-
-X_val_opt = df_tune[df_tune['Company_Age'] == 8].drop(columns=['IS_SUCCESS'])
-y_val_opt = df_tune[df_tune['Company_Age'] == 8]['IS_SUCCESS']
-
-# The untouched holdout set
-X_test = df_test.drop(columns=['IS_SUCCESS'])
-y_test = df_test['IS_SUCCESS']
-
-print("Hyperparameter Tuning Setup (Bayesian Optimization with Early Stopping):")
-print(f"Training Fold (Age >= 9): {len(X_train_opt)} startups")
-print(f"Validation Fold (Age = 8): {len(X_val_opt)} startups")
-print(f"Holdout Test Set (Age 5-7): {len(X_test)} startups\n")
-
-# Calculate scale_pos_weight for handling class imbalance
-scale_pos_weight_train = (y_train_opt == 0).sum() / (y_train_opt == 1).sum()
-
-
-def objective(trial):
-    # 1. Define the search space
-    param = {
-        'n_estimators': 1000, # Set high; early stopping will cut this off automatically
-        'max_depth': trial.suggest_int('max_depth', 3, 12),
-        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
-        'subsample': trial.suggest_float('subsample', 0.6, 1.0),
-        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
-        'min_child_weight': trial.suggest_int('min_child_weight', 1, 15),
-        'scale_pos_weight': scale_pos_weight_train, 
-        'n_jobs': -1,
-        'random_state': 42,
-        'early_stopping_rounds': 50 # Stop if validation score doesn't improve for 50 rounds
-    }
+# ==============================================================================
+# 2. HELPER FUNCTIONS
+# ==============================================================================
+def find_optimal_threshold(y_true, y_proba, beta=2, title_suffix=""):
+    """
+    Finds the optimal probability threshold based on the F-beta score.
+    beta=2 weighs Recall heavily, which is crucial for finding VC unicorns.
+    """
+    precisions, recalls, thresholds = precision_recall_curve(y_true, y_proba)
     
-    # 2. Initialize the model
-    xgb_model = XGBClassifier(**param)
+    # Calculate F-beta score for all thresholds (add 1e-8 to avoid division by zero)
+    fbeta_scores = ((1 + beta**2) * (precisions * recalls)) / ((beta**2 * precisions) + recalls + 1e-8)
     
-    # 3. Train with the validation set passed to eval_set for early stopping
-    xgb_model.fit(
-        X_train_opt, y_train_opt,
-        eval_set=[(X_val_opt, y_val_opt)],
-        verbose=False
-    )
+    # Find the index of the maximum F-beta score
+    optimal_idx = np.argmax(fbeta_scores)
+    optimal_threshold = thresholds[optimal_idx]
     
-    # Save the actual number of trees used before early stopping triggered
-    # This allows us to use the exact right number of trees in the final model
-    trial.set_user_attr("best_n_estimators", xgb_model.best_iteration + 1)
+    print(f"\n--- OPTIMAL THRESHOLD CALCULATION (F{beta}-Score) ---")
+    print(f"Optimal Threshold: {optimal_threshold:.4f}")
+    print(f"Expected Precision: {precisions[optimal_idx]:.4f}")
+    print(f"Expected Recall:    {recalls[optimal_idx]:.4f}")
     
-    # 4. Predict strictly on the Age == 8 validation set
-    preds = xgb_model.predict(X_val_opt)
+    # Plotting the trade-off
+    plt.figure(figsize=(8, 5))
+    plt.plot(thresholds, precisions[:-1], 'b--', label='Precision')
+    plt.plot(thresholds, recalls[:-1], 'g-', label='Recall')
+    plt.plot(thresholds, fbeta_scores[:-1], 'r-', label=f'F{beta} Score')
+    plt.axvline(x=optimal_threshold, color='k', linestyle=':', label=f'Optimal Threshold ({optimal_threshold:.2f})')
+    plt.title(f'Precision-Recall Trade-off: {title_suffix}')
+    plt.xlabel('Probability Threshold')
+    plt.ylabel('Score')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show(block=False) # Show without blocking script execution
     
-    # 5. Return the F1-score of the Success class for Optuna to maximize
-    return f1_score(y_val_opt, preds)
+    return optimal_threshold
 
+def plot_importance(model, feature_names, title):
+    importances = model.feature_importances_
+    indices = np.argsort(importances)[-15:] # Top 15 features
+    
+    plt.figure(figsize=(10, 6))
+    plt.barh(range(len(indices)), importances[indices], align='center', color='teal')
+    plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
+    plt.title(title)
+    plt.xlabel('XGBoost Relative Importance')
+    plt.tight_layout()
+    plt.show(block=False)
 
-print("Running Bayesian Optimization... (50 trials)")
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=50)
+# ==============================================================================
+# 3. OPTUNA TUNING & EVALUATION CORE
+# ==============================================================================
+def tune_and_evaluate(df, target_col):
+    print(f"\n\n{'='*60}")
+    print(f"🚀 TRAINING PIPELINE: {target_col}")
+    print(f"{'='*60}")
+    
+    # Drop the *other* target so the model can't cheat
+    X = df.drop(columns=targets)
+    y = df[target_col]
+    
+    # --- SPLIT 1: Isolate Holdout Test Set (20%) ---
+    X_temp, X_test, y_temp, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+    
+    # --- SPLIT 2: Train (60%) and Validation (20%) for Optuna ---
+    X_train, X_val, y_train, y_val = train_test_split(X_temp, y_temp, test_size=0.25, stratify=y_temp, random_state=42)
+    
+    scale_weight_train = (y_train == 0).sum() / (y_train == 1).sum()
+    
+    print(f"Train Set:      {len(X_train)} startups")
+    print(f"Validation Set: {len(X_val)} startups (Used for Early Stopping)")
+    print(f"Holdout Set:    {len(X_test)} startups")
+    print(f"Running Bayesian Optimization (50 trials)...")
 
+    def objective(trial):
+        param = {
+            'n_estimators': 1500,
+            'max_depth': trial.suggest_int('max_depth', 3, 9),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.2, log=True),
+            'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+            'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+            'min_child_weight': trial.suggest_int('min_child_weight', 1, 15),
+            'scale_pos_weight': scale_weight_train, 
+            'eval_metric': 'aucpr', 
+            'early_stopping_rounds': 40,
+            'n_jobs': -1,
+            'random_state': 42
+        }
+        
+        model = xgb.XGBClassifier(**param)
+        model.fit(
+            X_train, y_train,
+            eval_set=[(X_val, y_val)],
+            verbose=False
+        )
+        
+        # Save best iteration
+        trial.set_user_attr("best_n_estimators", model.best_iteration + 1)
+        
+        preds_proba = model.predict_proba(X_val)[:, 1]
+        return average_precision_score(y_val, preds_proba)
 
-print("\n--- BEST HYPERPARAMETERS (OPTUNA) ---")
-print(study.best_params)
+    # Run Optuna
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=50)
 
-# Retrieve the optimal number of trees discovered by early stopping
-optimal_n_estimators = study.best_trial.user_attrs["best_n_estimators"]
-print(f"Optimal number of trees (found via early stopping): {optimal_n_estimators}")
+    print("\n--- BEST HYPERPARAMETERS FOUND ---")
+    for key, value in study.best_params.items():
+        print(f"  {key}: {value}")
+    optimal_trees = study.best_trial.user_attrs["best_n_estimators"]
+    print(f"  optimal_trees: {optimal_trees} (via Early Stopping)")
 
-print("\n--- EVALUATING OPTUNA MODEL ON UNTOUCHED TEST SET ---")
+    # ==========================================================================
+    # FINAL MODEL TRAINING & EVALUATION
+    # ==========================================================================
+    print("\n--- EVALUATING FINAL MODEL ON UNTOUCHED HOLDOUT SET ---")
+    scale_weight_temp = (y_temp == 0).sum() / (y_temp == 1).sum()
+    
+    best_params = study.best_params
+    best_params['n_estimators'] = optimal_trees
+    best_params['scale_pos_weight'] = scale_weight_temp
+    best_params['n_jobs'] = -1
+    best_params['random_state'] = 42
 
-# Recalculate scale_pos_weight for the combined tuning set
-X_tune_full = df_tune.drop(columns=['IS_SUCCESS'])
-y_tune_full = df_tune['IS_SUCCESS']
-scale_pos_weight_full = (y_tune_full == 0).sum() / (y_tune_full == 1).sum()
+    final_model = xgb.XGBClassifier(**best_params)
+    final_model.fit(X_temp, y_temp, verbose=False)
 
-# Compile the final parameters
-best_params = study.best_params
-best_params['n_estimators'] = optimal_n_estimators # Inject the optimal tree count
-best_params['scale_pos_weight'] = scale_pos_weight_full
-best_params['random_state'] = 42
-best_params['n_jobs'] = -1
+    y_proba = final_model.predict_proba(X_test)[:, 1]
 
-# Initialize the final model
-final_xgb_model = XGBClassifier(**best_params)
+    print(f"ROC-AUC Score: {roc_auc_score(y_test, y_proba):.4f}")
+    print(f"PR-AUC Score:  {average_precision_score(y_test, y_proba):.4f}")
+    
+    # Find and apply optimal VC threshold
+    best_thresh = find_optimal_threshold(y_test, y_proba, beta=2, title_suffix=target_col)
+    y_pred_custom = (y_proba >= best_thresh).astype(int)
 
-# Fit on combined Train + Val (Age >= 8)
-final_xgb_model.fit(X_tune_full, y_tune_full, verbose=False)
+    print(f"\nClassification Report (Custom Threshold: {best_thresh:.4f}):")
+    print(classification_report(y_test, y_pred_custom))
+    
+    print("Confusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred_custom)
+    print(f"True Negatives:  {cm[0][0]:<5} | False Positives: {cm[0][1]}")
+    print(f"False Negatives: {cm[1][0]:<5} | True Positives:  {cm[1][1]}\n")
+    
+    return final_model, X.columns
 
-# Final prediction on the Holdout Test Set (Age 5-7)
-y_pred_test_opt = final_xgb_model.predict(X_test)
+# ==============================================================================
+# 4. EXECUTE PIPELINE
+# ==============================================================================
+model_exit, features_exit = tune_and_evaluate(df, 'IS_EXIT')
+plot_importance(model_exit, features_exit, "Top 15 Features: Predicting Exits")
 
-print(classification_report(y_test, y_pred_test_opt))
+model_growth, features_growth = tune_and_evaluate(df, 'IS_HIGH_GROWTH')
+plot_importance(model_growth, features_growth, "Top 15 Features: Predicting High Growth")
+
+# Keep plots open at the end
+plt.show()

@@ -8,8 +8,9 @@ import shap
 import optuna
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
-from sklearn.metrics import f1_score, classification_report, roc_auc_score, roc_curve
+from sklearn.metrics import f1_score, classification_report, roc_auc_score, roc_curve, average_precision_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.utils.class_weight import compute_class_weight
@@ -31,6 +32,54 @@ if 'ID' in df.columns: df = df.set_index('ID')
 if 'Name' in df.columns: df = df.drop(columns=['Name'])
 
 
+"""
+# 80/20 TRAIN TEST SPLIT & LEAKAGE PREVENTION
+# Company_Age must be dropped from all X matrices to prevent target leakage
+cols_to_drop = ['IS_SUCCESS']
+X = df.drop(columns=[col for col in cols_to_drop if col in df.columns])
+y = df['IS_SUCCESS']
+
+# Full Tuning Set (80%) and Holdout Test Set (20%)
+X_tune_full, X_test, y_tune_full, y_test = train_test_split(
+    X, y, test_size=0.20, random_state=42, stratify=y
+)
+
+# Splits for Optuna (80% of Tuning Set for Training, 20% for Validation)
+X_train_opt, X_val_opt, y_train_opt, y_val_opt = train_test_split(
+    X_tune_full, y_tune_full, test_size=0.20, random_state=42, stratify=y_tune_full
+)
+
+print("\nHyperparameter Tuning Setup (Standard 80/20 Split):")
+print(f"  Training Fold (Optuna)  : {len(X_train_opt)} startups")
+print(f"  Validation Fold (Optuna): {len(X_val_opt)} startups")
+print(f"  Full Tuning Set (Final) : {len(X_tune_full)} startups")
+print(f"  Holdout Test Set (20%)  : {len(X_test)} startups\n")
+"""
+
+
+from sklearn.model_selection import KFold
+
+# --- HELPER-FUNCTIONS FOR MULTILABEL TARGET ENCODING ---
+def parse_multilabel_string(val):
+    if pd.isna(val): return []
+    return [str(x).strip().lower() for x in str(val).split(';') if str(x).strip()]
+
+def create_multilabel_target_encoder(df_train, col_name, target_col, m=10):
+    global_mean = df_train[target_col].mean()
+    exploded = df_train[[col_name, target_col]].explode(col_name)
+    stats = exploded.groupby(col_name)[target_col].agg(['count', 'mean'])
+    stats['smoothed_mean'] = (stats['count'] * stats['mean'] + m * global_mean) / (stats['count'] + m)
+    return stats['smoothed_mean'].to_dict(), global_mean
+
+def apply_multilabel_target_encoding(dataframe, col_name, encoding_map, global_mean):
+    def get_average_encoding(sub_ind_list):
+        if not isinstance(sub_ind_list, list) or len(sub_ind_list) == 0:
+            return global_mean
+        scores = [encoding_map.get(sub_ind, global_mean) for sub_ind in sub_ind_list]
+        return np.mean(scores)
+    return dataframe[col_name].apply(get_average_encoding)
+
+
 # TIME-BASED SPLIT & LEAKAGE PREVENTION
 
 tune_mask = df['Company_Age'] >= 8
@@ -39,10 +88,15 @@ df_tune = df[tune_mask].copy()
 test_mask = (df['Company_Age'] >= 5) & (df['Company_Age'] <= 7)
 df_test = df[test_mask].copy()
 
-# Company_Age must be dropped from all X matrices to prevent target leakage
+# LEAKAGE-FREE TARGET ENCODING FOR SUB-INDUSTRIES
+print("Applying strict leakage-free Target Encoding...")
+
+
+
+
 cols_to_drop = ['IS_SUCCESS', 'Company_Age']
 
-#  Splits for Optuna (Age >= 9 for Training, Age == 8 for Validation)
+# Splits for Optuna (Age >= 9 for Training, Age == 8 for Validation)
 X_train_opt = df_tune[df_tune['Company_Age'] >= 9].drop(columns=cols_to_drop)
 y_train_opt = df_tune[df_tune['Company_Age'] >= 9]['IS_SUCCESS']
 
@@ -57,11 +111,11 @@ y_tune_full = df_tune['IS_SUCCESS']
 X_test = df_test.drop(columns=cols_to_drop)
 y_test = df_test['IS_SUCCESS']
 
+
 print("\nHyperparameter Tuning Setup (Chronological Split):")
 print(f"  Training Fold (Age >= 9) : {len(X_train_opt)} startups")
 print(f"  Validation Fold (Age == 8): {len(X_val_opt)} startups")
 print(f"  Holdout Test Set (Age 5-7): {len(X_test)} startups\n")
-
 
 # BAYESIAN OPTIMIZATION: RANDOM FOREST
 print("="*50)
@@ -82,8 +136,8 @@ def objective_rf(trial):
     
     rf = RandomForestClassifier(**param)
     rf.fit(X_train_opt, y_train_opt)
-    preds = rf.predict(X_val_opt)
-    return f1_score(y_val_opt, preds)
+    preds = rf.predict_proba(X_val_opt)[:, 1] 
+    return average_precision_score(y_val_opt, preds)
 
 study_rf = optuna.create_study(direction='maximize')
 study_rf.optimize(objective_rf, n_trials=50)
@@ -126,8 +180,8 @@ def objective_xgb(trial):
     )
     
     trial.set_user_attr("best_n_estimators", xgb_model.best_iteration + 1)
-    preds = xgb_model.predict(X_val_opt)
-    return f1_score(y_val_opt, preds)
+    preds = xgb_model.predict_proba(X_val_opt)[:, 1]
+    return average_precision_score(y_val_opt, preds)
 
 study_xgb = optuna.create_study(direction='maximize')
 study_xgb.optimize(objective_xgb, n_trials=50)
@@ -246,9 +300,8 @@ def objective(trial):
     )
     
     preds_proba = model.predict(X_val_opt_scaled, verbose=0)
-    preds = (preds_proba > threshold).astype(int).flatten()
     
-    return f1_score(y_val_opt, preds)
+    return average_precision_score(y_val_opt, preds_proba)
 
 print("Running Bayesian Optimization for Advanced NN... (50 trials)")
 study = optuna.create_study(direction='maximize')
@@ -341,9 +394,9 @@ def objective_lr(trial):
     X_val_opt_scaled = preprocessor.transform(X_val_opt)
     
     lr.fit(X_train_opt_scaled, y_train_opt)
-    preds = lr.predict(X_val_opt_scaled)
+    preds = lr.predict_proba(X_val_opt_scaled)[:, 1]
     
-    return f1_score(y_val_opt, preds)
+    return average_precision_score(y_val_opt, preds)
 
 study_lr = optuna.create_study(direction='maximize')
 study_lr.optimize(objective_lr, n_trials=50)
