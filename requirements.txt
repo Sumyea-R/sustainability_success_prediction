@@ -40,3 +40,4 @@ keras
 tensorflow
 xgboost
 optuna
+imbalanced-learn

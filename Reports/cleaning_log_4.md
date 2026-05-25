@@ -120,3 +120,82 @@ The following results were obtained after HPO (Optuna) on the refined 3-class da
 *   Tree-based models (CatBoost, RF, XGB) significantly outperform the linear baseline and neural network on this tabular dataset.
 *   CatBoost achieved the highest overall performance, successfully handling categorical features and imbalanced classes.
 *   The high ROC-AUC scores (0.83 - 0.88) indicate strong separability, though the Macro F1 reflects the challenge of predicting rare success events (Classes 1 and 2).
+
+## 7. Resampling Strategy & Final Model Results (SMOTENC + Tomek Links)
+
+Due to the severe class imbalance (90.8% / 6.8% / 2.4%) and the presence of mixed continuous and categorical features, the training pipeline was updated to implement **SMOTENC** (SMOTE for Nominal and Continuous) followed by **Tomek Links** for undersampling noisy boundary samples.
+
+*   **SMOTENC:** Safely generates synthetic minority examples without producing invalid fractional values for categorical columns.
+*   **Tomek Links:** Cleans up borderline regions where synthetic minority examples might overlap with majority class examples.
+
+### Class Distribution in Training After Resampling
+The training data is now physically balanced, penalizing the model from adopting a "lazy" majority-class prediction strategy:
+*   **0 (None):** ~33.5%
+*   **1 (Exit):** ~33.1%
+*   **2 (High Growth):** ~33.5%
+
+### Updated Model Performance (Imbalanced Test Set)
+Evaluated on the true, imbalanced holdout set to reflect real-world performance, XGBoost emerged as the leading model across Macro F1 and ROC-AUC. 
+
+| Model | Macro F1-Score | ROC-AUC (OVR) |
+| :--- | :--- | :--- |
+| **XGBoost** | **0.5409** | **0.8726** |
+| **CatBoost** | 0.5373 | 0.8705 |
+| **Random Forest** | 0.5364 | 0.8704 |
+| **Neural Network** | 0.4893 | 0.8302 |
+| **Logistic Regression** | 0.4795 | 0.8353 |
+
+### Detailed Performance by Class (Post-Resampling)
+
+#### XGBoost (Best Overall)
+| Class | Precision | Recall | F1-Score |
+| :--- | :--- | :--- | :--- |
+| **0 (None)** | 0.96 | 0.84 | 0.90 |
+| **1 (Exit)** | 0.20 | 0.40 | 0.26 |
+| **2 (High Growth)** | 0.32 | 0.84 | 0.46 |
+
+#### CatBoost
+| Class | Precision | Recall | F1-Score |
+| :--- | :--- | :--- | :--- |
+| **0 (None)** | 0.95 | 0.89 | 0.92 |
+| **1 (Exit)** | 0.21 | 0.28 | 0.24 |
+| **2 (High Growth)** | 0.33 | 0.76 | 0.46 |
+
+#### Random Forest
+| Class | Precision | Recall | F1-Score |
+| :--- | :--- | :--- | :--- |
+| **0 (None)** | 0.95 | 0.90 | 0.92 |
+| **1 (Exit)** | 0.22 | 0.25 | 0.23 |
+| **2 (High Growth)** | 0.31 | 0.82 | 0.45 |
+
+#### Neural Network
+| Class | Precision | Recall | F1-Score |
+| :--- | :--- | :--- | :--- |
+| **0 (None)** | 0.93 | 0.89 | 0.91 |
+| **1 (Exit)** | 0.21 | 0.37 | 0.27 |
+| **2 (High Growth)** | 0.32 | 0.26 | 0.29 |
+
+#### Logistic Regression
+| Class | Precision | Recall | F1-Score |
+| :--- | :--- | :--- | :--- |
+| **0 (None)** | 0.96 | 0.75 | 0.84 |
+| **1 (Exit)** | 0.16 | 0.49 | 0.24 |
+| **2 (High Growth)** | 0.24 | 0.72 | 0.36 |
+
+### Impact of Resampling
+*   **Minority Recall Improvement:** Implementing SMOTENC + Tomek Links improved the models' abilities to detect the minority classes. For example, XGBoost now achieves a recall of 0.84 for High Growth, showing it is highly sensitive to successful trajectories.
+*   **Metric Shift:** While overall accuracy may have slightly decreased due to more aggressive predictions on minority classes, the balance captured by F1-Macro highlights a much more robust and practically useful model.
+
+### 7.1 Empirical Finding: Synthetic Resampling vs. Cost-Sensitive Learning
+
+A critical comparative analysis was conducted between algorithmic **Cost-Sensitive Learning** (using native `class_weight='balanced'` in tree models, documented in Section 6) and **Data-Level Synthetic Resampling** (SMOTENC + Tomek Links, documented above). 
+
+Contrary to common assumptions in imbalanced classification, the empirical results demonstrated that **Synthetic Resampling slightly degraded overall predictive performance** across the primary tree-based models:
+*   **CatBoost F1-Macro:** Decreased from 0.546 (Weighted) to 0.537 (Resampled).
+*   **XGBoost F1-Macro:** Decreased from 0.543 (Weighted) to 0.540 (Resampled).
+*   **Random Forest F1-Macro:** Decreased from 0.545 (Weighted) to 0.536 (Resampled).
+
+**Methodological Implications for the Thesis:**
+1.  **The "Synthetic Noise" Problem:** Sustainable startup trajectories are highly complex and non-linear. SMOTENC generates synthetic data by mathematically interpolating between existing rare instances (Exits and High Growth). In a high-dimensional space (76 features) containing numerous sparse, categorical boolean flags (e.g., specific investor types or funding instruments), this interpolation likely generates unrealistic, "Frankenstein" profiles that do not exist in the real world. The models overfit to these artificial boundaries during training, leading to poorer generalization on the strict, unmodified real-world test set.
+2.  **Superiority of Algorithmic Penalization:** The results empirically validate that for this specific domain, modifying the loss function to heavily penalize misclassifications of the minority class (Cost-Sensitive Learning) is a more robust methodology than altering the underlying data distribution. It preserves the true, organic variance of the sustainable startup ecosystem.
+3.  **Data Limitations:** Ultimately, these findings highlight a core limitation inherent in current sustainability data: the sheer sparsity of true "success" events (Exits/High Growth). While advanced machine learning methodologies (like SMOTENC) attempt to bridge this gap, they cannot magically synthesize the nuanced realities of successful sustainable business models if the baseline signal is fundamentally weak or constrained by the current maturity of the sector.

@@ -22,6 +22,9 @@ from keras.layers import Dense, Dropout, BatchNormalization
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras import regularizers
 
+from imblearn.over_sampling import SMOTENC
+from imblearn.under_sampling import TomekLinks
+
 warnings.filterwarnings('ignore')
 
 # ==============================================================================
@@ -67,15 +70,31 @@ for col in cat_feature_names:
 cat_features = [i for i, col in enumerate(X.columns) if col in cat_feature_names]
 
 # ==============================================================================
-# 2. DATA SPLITTING
+# 2. DATA SPLITTING & RESAMPLING
 # ==============================================================================
 # Since all companies are at the same stage (age 5), we use random split.
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.15, random_state=42, stratify=y_train)
 
 print(f"Train size: {len(X_train)}, Val size: {len(X_val)}, Test size: {len(X_test)}")
-print("Class Distribution in Training:")
+print("Class Distribution in Training Before Resampling:")
 print(y_train.value_counts(normalize=True))
+
+# Resampling using SMOTENC + TomekLinks
+print("\nApplying SMOTENC + TomekLinks resampling...")
+# Fill NaNs first because imblearn algorithms cannot handle them
+X_train_filled_pre_resample = X_train.fillna(0)
+
+# Apply SMOTENC
+smote_nc = SMOTENC(categorical_features=cat_features, random_state=42)
+X_train_res, y_train_res = smote_nc.fit_resample(X_train_filled_pre_resample, y_train)
+
+# Apply Tomek Links
+tomek = TomekLinks()
+X_train_res, y_train_res = tomek.fit_resample(X_train_res, y_train_res)
+
+print("Class Distribution in Training After Resampling:")
+print(pd.Series(y_train_res).value_counts(normalize=True))
 
 # ==============================================================================
 # 3. PREPROCESSING (For LR and NN)
@@ -91,18 +110,18 @@ preprocessor = ColumnTransformer(
         ('passthrough', 'passthrough', passthrough_indices)
     ])
 
-# We'll fill NaNs with 0 for LR/NN/XGB (CatBoost handles them natively)
-X_train_filled = X_train.fillna(0)
+# We'll fill NaNs with 0 for LR/NN/XGB for val/test (CatBoost handles them natively but we will use filled to be safe)
 X_val_filled = X_val.fillna(0)
 X_test_filled = X_test.fillna(0)
 
-X_train_scaled = preprocessor.fit_transform(X_train_filled).astype('float32')
+# Scale on the resampled, filled training set
+X_train_scaled = preprocessor.fit_transform(X_train_res).astype('float32')
 X_val_scaled = preprocessor.transform(X_val_filled).astype('float32')
 X_test_scaled = preprocessor.transform(X_test_filled).astype('float32')
 
-# Compute class weights for imbalanced classes
-classes = np.unique(y_train)
-weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_train)
+# Since data is physically balanced, weights are technically uniform now, but we compute just in case it's slightly off
+classes = np.unique(y_train_res)
+weights = compute_class_weight(class_weight='balanced', classes=classes, y=y_train_res)
 class_weights_dict = {i: weights[i] for i in range(len(classes))}
 
 # ==============================================================================
@@ -144,12 +163,12 @@ print("\nTraining Logistic Regression...")
 study_lr = optuna.create_study(direction='maximize')
 def objective_lr(trial):
     C = trial.suggest_float('C', 1e-3, 1e2, log=True)
-    lr = LogisticRegression(C=C, solver='lbfgs', class_weight='balanced', max_iter=1000)
-    lr.fit(X_train_scaled, y_train)
+    lr = LogisticRegression(C=C, solver='lbfgs', max_iter=1000)
+    lr.fit(X_train_scaled, y_train_res)
     return f1_score(y_val, lr.predict(X_val_scaled), average='macro')
 study_lr.optimize(objective_lr, n_trials=20)
-lr_best = LogisticRegression(**study_lr.best_params, class_weight='balanced', max_iter=1000)
-lr_best.fit(X_train_scaled, y_train)
+lr_best = LogisticRegression(**study_lr.best_params, max_iter=1000)
+lr_best.fit(X_train_scaled, y_train_res)
 results['Logistic Regression'] = evaluate_model(lr_best, X_test_scaled, y_test, 'Logistic Regression', is_scaled=True)
 
 # --- Random Forest ---
@@ -160,18 +179,17 @@ def objective_rf(trial):
         'max_depth': trial.suggest_categorical('max_depth', [None, 10, 20, 30]),
         'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
-        'class_weight': 'balanced',
         'n_jobs': -1,
         'random_state': 42
     }
     rf = RandomForestClassifier(**param)
-    rf.fit(X_train_filled, y_train)
+    rf.fit(X_train_res, y_train_res)
     return f1_score(y_val, rf.predict(X_val_filled), average='macro')
 
 study_rf = optuna.create_study(direction='maximize')
 study_rf.optimize(objective_rf, n_trials=20)
-rf_best = RandomForestClassifier(**study_rf.best_params, class_weight='balanced', n_jobs=-1, random_state=42)
-rf_best.fit(X_train_filled, y_train)
+rf_best = RandomForestClassifier(**study_rf.best_params, n_jobs=-1, random_state=42)
+rf_best.fit(X_train_res, y_train_res)
 results['Random Forest'] = evaluate_model(rf_best, X_test_filled, y_test, 'Random Forest')
 
 # --- XGBoost ---
@@ -189,13 +207,13 @@ def objective_xgb(trial):
         'random_state': 42
     }
     xgb_model = XGBClassifier(**param)
-    xgb_model.fit(X_train_filled, y_train)
+    xgb_model.fit(X_train_res, y_train_res)
     return f1_score(y_val, xgb_model.predict(X_val_filled), average='macro')
 
 study_xgb = optuna.create_study(direction='maximize')
 study_xgb.optimize(objective_xgb, n_trials=20)
 xgb_best = XGBClassifier(**study_xgb.best_params, objective='multi:softprob', num_class=3, enable_categorical=True, random_state=42)
-xgb_best.fit(X_train_filled, y_train)
+xgb_best.fit(X_train_res, y_train_res)
 results['XGBoost'] = evaluate_model(xgb_best, X_test_filled, y_test, 'XGBoost')
 
 # --- CatBoost ---
@@ -207,19 +225,18 @@ def objective_cat(trial):
         'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
         'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 1e-2, 10, log=True),
         'loss_function': 'MultiClass',
-        'auto_class_weights': 'Balanced',
         'verbose': False,
         'random_state': 42
     }
     cat_model = CatBoostClassifier(**param)
-    cat_model.fit(X_train, y_train, cat_features=cat_features, eval_set=(X_val, y_val))
-    return f1_score(y_val, cat_model.predict(X_val), average='macro')
+    cat_model.fit(X_train_res, y_train_res, cat_features=cat_features, eval_set=(X_val_filled, y_val))
+    return f1_score(y_val, cat_model.predict(X_val_filled), average='macro')
 
 study_cat = optuna.create_study(direction='maximize')
 study_cat.optimize(objective_cat, n_trials=20)
-cat_best = CatBoostClassifier(**study_cat.best_params, loss_function='MultiClass', auto_class_weights='Balanced', verbose=False, random_state=42)
-cat_best.fit(X_train, y_train, cat_features=cat_features)
-results['CatBoost'] = evaluate_model(cat_best, X_test, y_test, 'CatBoost')
+cat_best = CatBoostClassifier(**study_cat.best_params, loss_function='MultiClass', verbose=False, random_state=42)
+cat_best.fit(X_train_res, y_train_res, cat_features=cat_features)
+results['CatBoost'] = evaluate_model(cat_best, X_test_filled, y_test, 'CatBoost')
 
 # --- Neural Network ---
 print("\nOptimizing Neural Network...")
@@ -243,7 +260,7 @@ def objective_nn(trial):
                   loss='sparse_categorical_crossentropy')
     
     early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    model.fit(X_train_scaled, y_train, validation_data=(X_val_scaled, y_val), 
+    model.fit(X_train_scaled, y_train_res, validation_data=(X_val_scaled, y_val), 
               epochs=30, batch_size=64, class_weight=class_weights_dict, callbacks=[early_stop], verbose=0)
     
     preds = np.argmax(model.predict(X_val_scaled, verbose=0), axis=1)
@@ -266,7 +283,7 @@ final_nn.add(Dense(3, activation='softmax'))
 final_nn.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=best_params['learning_rate']), 
                  loss='sparse_categorical_crossentropy')
 
-final_nn.fit(X_train_scaled, y_train, validation_data=(X_val_scaled, y_val), 
+final_nn.fit(X_train_scaled, y_train_res, validation_data=(X_val_scaled, y_val), 
              epochs=50, batch_size=64, class_weight=class_weights_dict, verbose=0)
 results['Neural Network'] = evaluate_model(final_nn, X_test_scaled, y_test, 'Neural Network', is_nn=True)
 
@@ -279,47 +296,5 @@ print("FINAL MODEL COMPARISON")
 print("="*50)
 print(res_df)
 res_df.to_csv(os.path.join(reports_folder, "model_comparison.csv"))
-
-# SHAP for CatBoost (representing high quality feature importance)
-print("\nGenerating SHAP explanations for CatBoost...")
-try:
-    # Use a smaller sample for SHAP to avoid memory issues/Bus error
-    X_test_sample = X_test.sample(min(500, len(X_test)), random_state=42)
-    explainer = shap.TreeExplainer(cat_best)
-    
-    # For multiclass, CatBoost shap_values returns a list of arrays or a 3D array
-    # We use Pool to ensure categories are handled correctly by CatBoost internal SHAP
-    test_pool = Pool(X_test_sample, cat_features=cat_features)
-    shap_values = explainer.shap_values(test_pool)
-
-    # Check structure of shap_values
-    if isinstance(shap_values, list):
-        # shap_values[class_index][sample_index, feature_index]
-        shap_vals_exit = shap_values[1]
-        shap_vals_growth = shap_values[2]
-    elif len(shap_values.shape) == 3:
-        # (samples, features, classes)
-        shap_vals_exit = shap_values[:, :, 1]
-        shap_vals_growth = shap_values[:, :, 2]
-    else:
-        # Binary or other case
-        shap_vals_exit = shap_values
-        shap_vals_growth = shap_values
-
-    # Plot for Exit (Class 1)
-    plt.figure(figsize=(12,8))
-    shap.summary_plot(shap_vals_exit, X_test_sample, max_display=15, show=False)
-    plt.title("SHAP Summary - CatBoost (Predicting EXIT)")
-    plt.savefig(os.path.join(reports_folder, "shap_catboost_exit.png"))
-    plt.close()
-
-    # Plot for High Growth (Class 2)
-    plt.figure(figsize=(12,8))
-    shap.summary_plot(shap_vals_growth, X_test_sample, max_display=15, show=False)
-    plt.title("SHAP Summary - CatBoost (Predicting HIGH GROWTH)")
-    plt.savefig(os.path.join(reports_folder, "shap_catboost_high_growth.png"))
-    plt.close()
-except Exception as e:
-    print(f"Error generating SHAP plots: {e}")
 
 print(f"\nTraining completed! Results saved in {reports_folder}")
