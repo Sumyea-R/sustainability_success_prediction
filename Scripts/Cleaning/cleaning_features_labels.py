@@ -9,8 +9,10 @@ from datetime import datetime
 # ==============================================================================
 # 1. SETUP & DATA LOADING
 # ==============================================================================
-current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() else os.getcwd()
-data_clean_folder = os.path.abspath(os.path.join(current_dir, "..", "Data_Clean"))
+# Resolve paths relative to script location (Scripts/Cleaning/)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+data_clean_folder = os.path.join(project_root, "Data_Clean")
 input_file = os.path.join(data_clean_folder, "Dealroom_All_Companies_SDG.csv")
 output_file_labels = os.path.join(data_clean_folder, "dealroom_clean_labels.csv")
 output_file_post_labels = os.path.join(data_clean_folder, "dealroom_post_labels.csv")
@@ -19,15 +21,19 @@ output_file_features = os.path.join(data_clean_folder, "dealroom_clean_features_
 print(f"Loading data from: {input_file}")
 # Using low_memory=False because Dealroom data has mixed types in many columns
 df = pd.read_csv(input_file, sep=';', low_memory=False)
+print(f"Original dataset size: {len(df)}")
 
 # Safety Deduplication
 if 'ID' in df.columns:
     df.drop_duplicates(subset=['ID'], keep='first', inplace=True)
     df.set_index('ID', inplace=True)
+print(f"Dataset size after deduplication: {len(df)}")
 
 # Basic Cleaning of Launch Year
 df["Launch year"] = pd.to_numeric(df["Launch year"], errors='coerce')
-df["Launch year"] = df["Launch year"].fillna(df["Launch year"].median()).round().astype(int)
+df = df.dropna(subset=["Launch year"]).copy()
+df["Launch year"] = df["Launch year"].round().astype(int)
+print(f"Dataset size after removing missing Launch Year: {len(df)}")
 
 # Define Observation Year: Launch Year + 5
 df['Observation_Year'] = df['Launch year'] + 5
@@ -117,15 +123,16 @@ def label_high_growth(row):
     
     # We use the yearly employee columns if available
     emp_col_base = "Employees ("
-    # Find the column that starts with "Employees (2016" or similar
+    # Find the column that starts with "Employees ("
     emp_col = next((c for c in df.columns if c.startswith(emp_col_base)), None)
     
     if not emp_col or pd.isna(row[emp_col]):
         return 0
     
     parts = str(row[emp_col]).split(";")
-    # The columns are 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026
-    years = list(range(2016, 2027))
+    # Extract years dynamically from column name
+    years_match = re.findall(r'\b\d{4}\b', emp_col)
+    years = [int(y) for y in years_match]
     year_to_idx = {y: i for i, y in enumerate(years)}
     
     if obs_year not in year_to_idx or growth_horizon not in year_to_idx:
@@ -351,12 +358,14 @@ df = pd.concat([df, df_investors], axis=1)
 def engineer_employee_features(row):
     obs_year = row['Observation_Year']
     
-    emp_col = next((c for c in df.columns if c.startswith("Employees (2016")), None)
+    emp_col = next((c for c in df.columns if c.startswith("Employees (")), None)
     if not emp_col or pd.isna(row[emp_col]):
         return pd.Series({'Emp_At_Obs': np.nan}) 
         
     parts = str(row[emp_col]).split(";")
-    years = list(range(2016, 2027))
+    # Extract years dynamically from column name
+    years_match = re.findall(r'\b\d{4}\b', emp_col)
+    years = [int(y) for y in years_match]
     year_to_idx = {y: i for i, y in enumerate(years)}
     
     def get_emp(y):
@@ -501,20 +510,83 @@ df['Missing_Round_Amount_Data'] = df['Each round amount'].apply(lambda x: 1 if '
 df['Missing_Round_Type_Data'] = df['Each round type'].isna().astype(int)
 
 # ==============================================================================
-# 5. CATEGORICAL ENCODING & FREQUENCY
 # ==============================================================================
-print("Encoding categoricals and frequency...")
+# 5. CATEGORICAL ENCODING & SDG / SUSTAINABILITY FEATURES
+# ==============================================================================
+print("Engineering SDG and sustainability features...")
 
-# Frequency Encoding
-sub_ind_counts = df['Sub industries'].value_counts()
-df['SubIndustry_Frequency'] = df['Sub industries'].map(sub_ind_counts).fillna(0)
+# SDG features (closed-set categories, safe to binarize here without fit leakage)
+df['Num_SDGs'] = df['SDGs'].apply(lambda x: len(str(x).split(';')) if pd.notna(x) and str(x).strip() != '' else 0)
 
-country_counts = df['HQ country'].value_counts()
-df['Country_Frequency'] = df['HQ country'].map(country_counts).fillna(0)
+def extract_sdg_nums(val):
+    if pd.isna(val): return []
+    return re.findall(r'\b\d+\b', str(val))
+
+mlb_sdg = MultiLabelBinarizer(classes=[str(i) for i in range(1, 18)])
+sdg_encoded = mlb_sdg.fit_transform(df['SDGs'].apply(extract_sdg_nums))
+df_sdg = pd.DataFrame(sdg_encoded, columns=[f"SDG_{c}" for c in mlb_sdg.classes_], index=df.index)
+df = pd.concat([df, df_sdg], axis=1)
+
+df_sdg_type = pd.get_dummies(df['SDG core or side value'], prefix='SDG_Type', dtype=int)
+df = pd.concat([df, df_sdg_type], axis=1)
 
 # Region (One-Hot)
 df_region = pd.get_dummies(df['HQ region'], prefix='Region', dtype=int)
 df = pd.concat([df, df_region], axis=1)
+
+# Keyword spotting for sustainability
+sus_keywords = ['carbon', 'renewable', 'circular', 'recycling', 'solar', 'wind', 
+                'sustainability', 'sustainable', 'green', 'eco', 'clean energy', 
+                'cleantech', 'climate']
+
+def check_sustainability_keywords(row):
+    text = f"{str(row.get('Tagline', ''))} {str(row.get('Long description', ''))}".lower()
+    return 1 if any(kw in text for kw in sus_keywords) else 0
+
+df['Has_Sustainability_Keywords'] = df.apply(check_sustainability_keywords, axis=1)
+
+# SDG-specific keywords dictionary (mapping each of the 17 SDGs to its textual keywords)
+sdg_keywords = {
+    '1': ['poverty', 'poor', 'microfinance', 'impoverished'],
+    '2': ['hunger', 'food security', 'agriculture', 'farming', 'crop', 'nutrition', 'cultivation'],
+    '3': ['healthcare', 'medical', 'disease', 'vaccine', 'well-being', 'patient', 'health tech', 'biotech', 'therapeutics'],
+    '4': ['education', 'school', 'learning', 'edtech', 'literacy', 'classroom'],
+    '5': ['gender', 'equality', 'women empowerment', 'female founders', 'diversity'],
+    '6': ['wastewater', 'clean water', 'drinking water', 'water filtration', 'water purification', 'sanitation'],
+    '7': ['solar', 'wind', 'renewable', 'clean energy', 'electricity', 'grid', 'hydroelectric', 'biomass', 'geothermal', 'energy transition', 'energy storage'],
+    '8': ['employment', 'decent work', 'job creation', 'fair wage', 'labor rights'],
+    '9': ['infrastructure', 'innovation', 'industrialization', 'smart city', 'manufacturing tech'],
+    '10': ['inequality', 'marginalized', 'inclusion', 'fair trade', 'social justice'],
+    '11': ['urban planning', 'public transport', 'green building', 'smart mobility', 'housing', 'e-mobility'],
+    '12': ['recycling', 'circular economy', 'waste management', 'packaging', 'biodegradable', 'upcycling', 'zero waste', 'compostable'],
+    '13': ['climate', 'carbon', 'emissions', 'greenhouse gas', 'co2', 'global warming', 'decarbonization'],
+    '14': ['marine', 'ocean', 'sea', 'fish', 'aquatic', 'coral reef'],
+    '15': ['biodiversity', 'forest', 'deforestation', 'land restoration', 'wildlife', 'ecosystem', 'soil conservation'],
+    '16': ['justice', 'human rights', 'anti-corruption', 'transparency', 'governance'],
+    '17': ['partnership', 'collaboration', 'global cooperation']
+}
+
+sdg_kw_cols = []
+sdg_comb_cols = []
+
+# Process SDG-specific keywords and combined features
+for i in range(1, 18):
+    str_i = str(i)
+    kws = sdg_keywords[str_i]
+    
+    # Check keyword presence in text (using closure to bind keywords correctly)
+    def make_check_kws(kws_list):
+        return lambda row: 1 if any(kw in f"{str(row.get('Tagline', ''))} {str(row.get('Long description', ''))}".lower() for kw in kws_list) else 0
+        
+    df[f'SDG_{str_i}_Keywords'] = df.apply(make_check_kws(kws), axis=1)
+    df[f'SDG_{str_i}_Combined'] = (df[f'SDG_{str_i}'] | df[f'SDG_{str_i}_Keywords']).astype(int)
+    
+    sdg_kw_cols.append(f'SDG_{str_i}_Keywords')
+    sdg_comb_cols.append(f'SDG_{str_i}_Combined')
+
+# Raw categorical columns for training-level frequency encoding (to avoid fit leakage)
+df['Sub industries'] = df['Sub industries'].fillna('Unknown').astype(str)
+df['HQ country'] = df['HQ country'].fillna('Unknown').astype(str)
 
 # ==============================================================================
 # 6. LOG TRANSFORMATIONS & PATENTS
@@ -554,10 +626,12 @@ feature_cols = [
     'Share_Top_Uni_Founders', 'Missing_Employee_Data', 'Missing_Founder_Data',
     'Missing_Investor_Data', 'Missing_SubIndustry', 'Missing_Founder_Education',
     'Missing_Founder_Background', 'Missing_Valuation', 'Missing_Funding_Round_Data',
-    'Missing_Round_Amount_Data', 'Missing_Round_Type_Data', 'SubIndustry_Frequency',
-    'Country_Frequency', 'Number of patents', 'Log_Num_Patents', 'Log_Num_Investors',
+    'Missing_Round_Amount_Data', 'Missing_Round_Type_Data',
+    'Sub industries', 'HQ country',  # Raw categorical columns for train-set frequency encoding
+    'Num_SDGs', 'Has_Sustainability_Keywords',
+    'Number of patents', 'Log_Num_Patents', 'Log_Num_Investors',
     'Log_Founder_Prior_Funding'
-] + list(df_region.columns)
+] + list(df_region.columns) + list(df_sdg.columns) + list(df_sdg_type.columns) + sdg_kw_cols + sdg_comb_cols
 
 
 X_final = df[feature_cols].copy()
